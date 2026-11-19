@@ -1,0 +1,9 @@
+device_id,timestamp,risk_score,zone,predicted_failure_date,suggested_shutdown_date,maintenance_action,failure_basis,remaining_life_days,alert_active,runtime_hours
+ESP32-002,2026-11-17T18:44:58.935814,15.9,A,,,Continue monitoring and collect more vibration history,ISO 20816 vibration standard,46.6,False,0.854
+ESP32-002,2026-11-17T18:55:30.510390,36.49,B,,,Continue monitoring and collect more vibration history,ISO 20816 vibration standard,14.66,False,0.854
+ESP32-002,2026-11-17T19:06:16.273780,54.11,B,2026-11-17T19:09:12.155994,2026-11-17T19:06:16.273780,Recommended shutdown: 2026-11-17T19:06:16.273780,ISO 20816 vibration standard,0.0,True,0.892
+ESP32-002,2026-11-17T19:16:16.378345,92.29,D,2026-11-17T19:16:16.378345,2026-11-17T19:16:16.378345,Shut down and inspect now: vibration is in ISO 20816 zone D,ISO 20816 vibration standard,0.0,True,0.893
+ESP32-002,2026-11-17T19:27:52.528397,37.86,B,2026-11-17T19:31:17.730857,2026-11-17T19:27:52.528397,Recommended shutdown: 2026-11-17T19:27:52.528397,ISO 20816 vibration standard,0.0,True,0.893
+ESP32-002,2026-11-17T19:53:47.910246,22.86,A,2026-11-17T20:23:09.350549,2026-11-17T19:53:47.910246,Recommended shutdown: 2026-11-17T19:53:47.910246,ISO 20816 vibration standard,0.02,True,0.93
+ESP32-002,2026-11-17T20:03:47.916939,100.0,D,2026-11-17T20:03:47.916939,2026-11-17T20:03:47.916939,Shut down and inspect now: vibration is in ISO 20816 zone D,ISO 20816 vibration standard,0.0,True,0.93
+ESP32-002,2026-11-17T20:13:48.107409,100.0,D,2026-11-17T20:13:48.107409,2026-11-17T20:13:48.107409,Shut down and inspect now: vibration is in ISO 20816 zone D,ISO 20816 vibration standard,0.0,True,0.93

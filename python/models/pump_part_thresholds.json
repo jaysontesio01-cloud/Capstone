@@ -1,0 +1,20 @@
+{
+  "source": "healthy_pump_training_data.csv",
+  "windows": 1828,
+  "rule": "healthy median + 3 robust standard deviations (1.4826 x median absolute deviation) over SVD-denoised 128-sample windows",
+  "created_at": "2026-11-17T20:20:45.066734",
+  "thresholds_g": {
+    "X-axis": {
+      "rms": 0.4974,
+      "peak": 0.8
+    },
+    "Y-axis": {
+      "rms": 0.1562,
+      "peak": 0.313
+    },
+    "Z-axis": {
+      "rms": 1.0246,
+      "peak": 1.6466
+    }
+  }
+}

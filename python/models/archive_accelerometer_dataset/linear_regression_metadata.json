@@ -1,0 +1,15 @@
+{
+  "feature_columns": [
+    "x",
+    "y",
+    "z"
+  ],
+  "target_column": "learned_vibration",
+  "training_rows": 163000,
+  "learned_vibration_mean": 1.2256504467727978,
+  "learned_vibration_std": 0.8786692462348074,
+  "residual_abs_mean": 0.4479453984466974,
+  "residual_abs_std": 0.6730566440101187,
+  "residual_abs_threshold": 4.653931709376145,
+  "last_trained_at": "2026-11-17T19:54:47.863628"
+}

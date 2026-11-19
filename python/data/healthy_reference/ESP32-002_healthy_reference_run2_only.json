@@ -1,0 +1,34 @@
+{
+  "from": "2026-11-17T19:17:05.298065",
+  "to": "2026-11-17T19:19:29.868546",
+  "running_samples": 13926,
+  "clipped_samples_replaced": 222,
+  "windows": 108,
+  "vibration_rms_g": {
+    "median": 0.6851,
+    "mean": 0.6972,
+    "robust_std": 0.0906,
+    "variation_percent": 13.2,
+    "p10": 0.6032,
+    "p90": 0.8008
+  },
+  "axis_rms_g": {
+    "x": 0.2835,
+    "y": 0.0805,
+    "z": 0.6197
+  },
+  "iso20816": {
+    "velocity_rms_mm_s": 26.72,
+    "zone": "D",
+    "condition": "Unacceptable",
+    "note": "estimated from 100 samples/s; vibration above 50 Hz is not measured correctly"
+  },
+  "temperature_c": {
+    "mean": 41.84,
+    "min": 40.25,
+    "max": 44.25,
+    "invalid_readings_skipped": 0
+  },
+  "processing": "running samples only; readings at +/-15.5 g replaced; 128-sample windows, SVD-denoised (rank 2); three-axis RMS (Formula 2); median over windows",
+  "recording": "data\\recordings\\ESP32-002_healthy_pump_20261117_183528.csv"
+}

@@ -1,0 +1,205 @@
+{
+ "axes": [
+  {
+   "axis": "X",
+   "healthy_limit_g": 0.4974,
+   "healthy_rms_g": 0.3341,
+   "pump_part": "Lateral Bearing/Shaft Alignment",
+   "rms_g": 0.4001,
+   "status": "healthy",
+   "times_healthy": 1.2
+  },
+  {
+   "axis": "Y",
+   "healthy_limit_g": 0.1562,
+   "healthy_rms_g": 0.077,
+   "pump_part": "Radial Bearing/Motor Housing",
+   "rms_g": 1.1904,
+   "status": "faulty",
+   "times_healthy": 15.46
+  },
+  {
+   "axis": "Z",
+   "healthy_limit_g": 1.0246,
+   "healthy_rms_g": 0.6654,
+   "pump_part": "Impeller/Pump Head/Axial Load",
+   "rms_g": 0.7402,
+   "status": "healthy",
+   "times_healthy": 1.11
+  }
+ ],
+ "device_id": "ESP32-001",
+ "device_name": "ESP32 Pump Sensor1",
+ "healthy_reference": {
+  "available": true,
+  "axis_limit_g": {
+   "x": 0.4974,
+   "y": 0.1562,
+   "z": 1.0246
+  },
+  "axis_rms_g": {
+   "x": 0.3341,
+   "y": 0.077,
+   "z": 0.6654
+  },
+  "recorded_from": "2026-11-17T19:17:05.298065",
+  "recorded_to": "2026-11-17T20:14:29.650691",
+  "source": "ESP32-002_healthy_reference.json",
+  "temperature_max_c": 65.25,
+  "temperature_mean_c": 55.37,
+  "total_rms_g": 0.7544,
+  "total_rms_p10_g": 0.6165,
+  "total_rms_p90_g": 0.9421
+ },
+ "last_update": "2026-11-18T20:00:57.238172+08:00",
+ "latest_temperature_c": 58.0,
+ "live_assessment": {
+  "anomaly_window_percent": 100.0,
+  "axes": [
+   {
+    "axis": "X",
+    "healthy_limit_g": 0.4974,
+    "healthy_rms_g": 0.3341,
+    "pump_part": "Lateral Bearing/Shaft Alignment",
+    "rms_g": 0.3999,
+    "status": "healthy",
+    "times_healthy": 1.2
+   },
+   {
+    "axis": "Y",
+    "healthy_limit_g": 0.1562,
+    "healthy_rms_g": 0.077,
+    "pump_part": "Radial Bearing/Motor Housing",
+    "rms_g": 1.1897,
+    "status": "faulty",
+    "times_healthy": 15.45
+   },
+   {
+    "axis": "Z",
+    "healthy_limit_g": 1.0246,
+    "healthy_rms_g": 0.6654,
+    "pump_part": "Impeller/Pump Head/Axial Load",
+    "rms_g": 0.7398,
+    "status": "healthy",
+    "times_healthy": 1.11
+   }
+  ],
+  "deviation_percent": 93.1,
+  "health_percent": 0.0,
+  "healthy_temperature_max_c": 65.25,
+  "healthy_temperature_mean_c": 55.37,
+  "healthy_total_rms_g": 0.7544,
+  "model_unusual_percent": 100.0,
+  "part_flags_percent": {
+   "Radial Bearing/Motor Housing": 100.0
+  },
+  "problems": [
+   {
+    "check": "Listen for grinding or rumbling at the motor, check the bearings for play and the motor housing bolts for looseness.",
+    "evidence": "Y-axis vibration 1.19 g vs 0.08 g on the healthy pump (15.4x); healthy limit 0.16 g (Radial Bearing/Motor Housing).",
+    "severity": "high",
+    "title": "Radial bearing wear or rotor imbalance"
+   }
+  ],
+  "risk_parts": {
+   "temperature": 0.0,
+   "unusual_windows": 100.0,
+   "vibration_deviation": 85.9
+  },
+  "risk_score": 100.0,
+  "running_seconds": 24.3,
+  "temperature_max_c": 58.0,
+  "temperature_mean_c": 58.0,
+  "total_rms_g": 1.4569,
+  "verdict": "FAULTY",
+  "verdict_text": "Faulty: shut down and inspect the pump",
+  "windows": 19
+ },
+ "location": "Faulty Pump",
+ "online": true,
+ "pump_running": true,
+ "recording": {
+  "device_id": "ESP32-001",
+  "file": "C:\\Users\\JAYSON~1\\AppData\\Local\\Temp\\tmpr8d2srng\\recordings\\ESP32-001_app_test_20min_20261118_200054.csv",
+  "label": "app_test_20min",
+  "recording": true,
+  "samples": 2500,
+  "started_at": "2026-11-18T20:00:54.644795"
+ },
+ "seconds_since_update": 0.3,
+ "sensor_vibration_rms_g": null,
+ "status": "success",
+ "test": {
+  "assessment": {
+   "anomaly_window_percent": 100.0,
+   "axes": [
+    {
+     "axis": "X",
+     "healthy_limit_g": 0.4974,
+     "healthy_rms_g": 0.3341,
+     "pump_part": "Lateral Bearing/Shaft Alignment",
+     "rms_g": 0.3999,
+     "status": "healthy",
+     "times_healthy": 1.2
+    },
+    {
+     "axis": "Y",
+     "healthy_limit_g": 0.1562,
+     "healthy_rms_g": 0.077,
+     "pump_part": "Radial Bearing/Motor Housing",
+     "rms_g": 1.1897,
+     "status": "faulty",
+     "times_healthy": 15.45
+    },
+    {
+     "axis": "Z",
+     "healthy_limit_g": 1.0246,
+     "healthy_rms_g": 0.6654,
+     "pump_part": "Impeller/Pump Head/Axial Load",
+     "rms_g": 0.7398,
+     "status": "healthy",
+     "times_healthy": 1.11
+    }
+   ],
+   "deviation_percent": 93.1,
+   "health_percent": 0.0,
+   "healthy_temperature_max_c": 65.25,
+   "healthy_temperature_mean_c": 55.37,
+   "healthy_total_rms_g": 0.7544,
+   "model_unusual_percent": 100.0,
+   "part_flags_percent": {
+    "Radial Bearing/Motor Housing": 100.0
+   },
+   "problems": [
+    {
+     "check": "Listen for grinding or rumbling at the motor, check the bearings for play and the motor housing bolts for looseness.",
+     "evidence": "Y-axis vibration 1.19 g vs 0.08 g on the healthy pump (15.4x); healthy limit 0.16 g (Radial Bearing/Motor Housing).",
+     "severity": "high",
+     "title": "Radial bearing wear or rotor imbalance"
+    }
+   ],
+   "risk_parts": {
+    "temperature": 0.0,
+    "unusual_windows": 100.0,
+    "vibration_deviation": 85.9
+   },
+   "risk_score": 100.0,
+   "running_seconds": 24.3,
+   "temperature_max_c": 58.0,
+   "temperature_mean_c": 58.0,
+   "total_rms_g": 1.4569,
+   "verdict": "FAULTY",
+   "verdict_text": "Faulty: shut down and inspect the pump",
+   "windows": 19
+  },
+  "elapsed_seconds": 2.8,
+  "ends_at": "2026-11-18T20:20:54.644780",
+  "finished_at": null,
+  "minutes": 20.0,
+  "recording_file": "C:\\Users\\JAYSON~1\\AppData\\Local\\Temp\\tmpr8d2srng\\recordings\\ESP32-001_app_test_20min_20261118_200054.csv",
+  "remaining_seconds": 1197.2,
+  "started_at": "2026-11-18T20:00:54.644780",
+  "state": "running",
+  "summary_file": null
+ }
+}
