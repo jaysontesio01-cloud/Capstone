@@ -76,6 +76,10 @@ class _MyHomePageState extends State<MyHomePage> {
   // Latest maintenance record (GET /api/esp32/maintenance/<id>?limit=1).
   Map<String, dynamic>? _latestMaintenance;
 
+  // Previous tests of the shown pump (GET /api/esp32/tests/<id>), newest first.
+  List<PumpTest>? _previousTests;
+  bool _testsLoading = false;
+
   // Live dashboard (GET /api/esp32/live/<id>), compared with the healthy pump.
   LiveData? _live;
   DateTime? _liveFetchedAt;
@@ -129,7 +133,92 @@ class _MyHomePageState extends State<MyHomePage> {
       _fetchRegisteredDevices(),
       _fetchLive(),
       _fetchLatestMaintenance(),
+      _fetchPreviousTests(),
     ]);
+  }
+
+  /// The shown pump's previous (finished or stopped) tests.
+  Future<void> _fetchPreviousTests() async {
+    final deviceId = _selectedDeviceId;
+    if (deviceId.isEmpty) return;
+    setState(() => _testsLoading = true);
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '$serverBaseUrl/api/esp32/tests/${Uri.encodeComponent(deviceId)}',
+            ),
+          )
+          .timeout(apiTimeout);
+      if (!mounted || deviceId != _selectedDeviceId) return;
+      if (response.statusCode == 200) {
+        final tests = jsonDecode(response.body)['tests'];
+        setState(() {
+          _previousTests = tests is List
+              ? tests
+                    .whereType<Map>()
+                    .map((t) => PumpTest.fromJson(Map<String, dynamic>.from(t)))
+                    .toList()
+              : const [];
+        });
+      }
+    } catch (e) {
+      debugPrint('Previous tests unavailable: $e');
+    } finally {
+      if (mounted) setState(() => _testsLoading = false);
+    }
+  }
+
+  Future<void> _confirmDeleteAllTests() async {
+    final count = _previousTests?.length ?? 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_outline, color: kFaulty, size: 32),
+        title: const Text('Delete all previous tests?'),
+        content: Text(
+          'All $count previous test${count == 1 ? '' : 's'} of '
+          '${_deviceNameFor(_selectedDeviceId)} will be deleted. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: kFaulty),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _deleteAllTests();
+  }
+
+  Future<void> _deleteAllTests() async {
+    final deviceId = _selectedDeviceId;
+    if (deviceId.isEmpty) return;
+    try {
+      final response = await http
+          .delete(
+            Uri.parse(
+              '$serverBaseUrl/api/esp32/tests/${Uri.encodeComponent(deviceId)}',
+            ),
+          )
+          .timeout(apiTimeout);
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      final deleted = jsonDecode(response.body)['deleted'];
+      if (mounted) setState(() => _previousTests = const []);
+      _showSnack('Deleted $deleted previous test${deleted == 1 ? '' : 's'}.');
+    } catch (e) {
+      debugPrint('Deleting the previous tests failed: $e');
+      _showSnack('Could not delete the previous tests. Try again.');
+    }
+    await Future.wait([_fetchPreviousTests(), _fetchLive(soon: true)]);
   }
 
   Future<void> _restoreSelectedDevice() async {
@@ -240,34 +329,14 @@ class _MyHomePageState extends State<MyHomePage> {
     return device != null && isDeviceOnline(device);
   }
 
-  /// Every pump with whether its sensors are online. The pump on the
-  /// dashboard is listed too while the server does not know it (yet).
-  List<PumpStatus> get _pumpStatuses {
-    final pumps = <PumpStatus>[];
-    for (final device in _registeredDevices) {
-      final deviceId = device['device_id']?.toString() ?? '';
-      if (deviceId.isEmpty) continue;
-      pumps.add(
-        PumpStatus(
-          deviceId: deviceId,
-          name: device['device_name']?.toString() ?? deviceId,
-          location: device['location']?.toString() ?? 'Unknown',
-          online: _pumpOnline(deviceId, device),
-        ),
-      );
+  /// Whether the shown pump's sensors are online.
+  bool get _selectedPumpOnline {
+    if (_selectedDeviceId.isEmpty) return false;
+    Map<String, dynamic>? device;
+    for (final entry in _registeredDevices) {
+      if (entry['device_id']?.toString() == _selectedDeviceId) device = entry;
     }
-    if (_selectedDeviceId.isNotEmpty &&
-        !pumps.any((pump) => pump.deviceId == _selectedDeviceId)) {
-      pumps.add(
-        PumpStatus(
-          deviceId: _selectedDeviceId,
-          name: _deviceNameFor(_selectedDeviceId),
-          location: _live?.location ?? '—',
-          online: _pumpOnline(_selectedDeviceId, null),
-        ),
-      );
-    }
-    return pumps;
+    return _pumpOnline(_selectedDeviceId, device);
   }
 
   Future<void> _selectDevice(String deviceId) async {
@@ -276,6 +345,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _selectedDeviceId = deviceId;
       _live = null;
       _latestMaintenance = null;
+      _previousTests = null;
       _lastVerdictAlertKey = null;
     });
     await _persistSelectedDevice(deviceId);
@@ -495,6 +565,9 @@ class _MyHomePageState extends State<MyHomePage> {
         _liveFetchedAt = DateTime.now();
       });
       _checkAlerts(live, previousTest);
+      if ((previousTest?.isRunning ?? false) && !live.test.isRunning) {
+        _fetchPreviousTests(); // the test just ended: it is now a previous test
+      }
     } catch (e) {
       debugPrint('Live data unavailable: $e');
       if (mounted) _liveUpdateFailed();
@@ -555,16 +628,6 @@ class _MyHomePageState extends State<MyHomePage> {
     return (test.remainingSeconds - since).clamp(0.0, test.minutes * 60);
   }
 
-  /// The Overall result shows the test while it runs; afterwards its result,
-  /// until the pump runs again without a test; otherwise the live data.
-  bool get _useTestResult {
-    final live = _live;
-    if (live == null) return false;
-    final test = live.test;
-    if (!test.exists || test.assessment == null) return false;
-    return test.isRunning || !live.liveAssessment.hasData;
-  }
-
   /// What the dashboard shows: the live data, or empty values (no pump
   /// selected, ESP32 not connected, server not reachable) so every section
   /// still shows.
@@ -577,10 +640,31 @@ class _MyHomePageState extends State<MyHomePage> {
             : _deviceNameFor(_selectedDeviceId),
       );
 
-  /// The result shown in the Overall section: the test's, or the live one.
-  Assessment get _overallAssessment {
-    final live = _view;
-    return _useTestResult ? live.test.assessment! : live.liveAssessment;
+  /// The test Machine health and Machine Problems are calculated over: the
+  /// running test, or the last one (null before the pump's first test).
+  PumpTest? get _currentTest {
+    final test = _view.test;
+    return test.exists ? test : null;
+  }
+
+  /// The current or last test's result over its whole duration.
+  Assessment get _testAssessment =>
+      _currentTest?.assessment ?? Assessment.empty();
+
+  /// Which test Machine health is calculated over.
+  String get _machineHealthSubtitle {
+    final test = _currentTest;
+    if (test == null) {
+      return 'No test yet: start a test to calculate the machine health.';
+    }
+    final minutes = '${test.minutes.toStringAsFixed(0)} min';
+    if (test.isRunning) {
+      return 'Test running: ${formatDuration(_testRemainingSeconds)} left of '
+          '$minutes · calculated over the test so far';
+    }
+    final how = test.state == 'stopped' ? 'stopped after' : 'ran';
+    return 'Last test: ${_formatDateTime(test.startedAt)} · $minutes test, '
+        '$how ${formatDuration(test.elapsedSeconds)}';
   }
 
   static const _esp32OfflineMessage =
@@ -699,9 +783,13 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
-    final assessment = _overallAssessment;
+    // While a test runs: alert when its result turns Warning or Faulty (the
+    // finished test has its own alert above).
+    if (!test.isRunning || test.assessment == null) return;
+    final assessment = test.assessment!;
     if (assessment.verdict == 'WARNING' || assessment.verdict == 'FAULTY') {
-      final key = '${live.deviceId}-${assessment.verdict}';
+      final key =
+          '${live.deviceId}-${test.startedAt?.toIso8601String()}-${assessment.verdict}';
       if (_lastVerdictAlertKey != key && !_dialogOpen) {
         _lastVerdictAlertKey = key;
         _showVerdictAlert(assessment);
@@ -855,18 +943,7 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0F2F1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.water_drop_outlined,
-                      color: Color(0xFF0F766E),
-                    ),
-                  ),
+                  const SystemLogo(size: 44),
                   const SizedBox(height: 14),
                   const Text(
                     'Pump Monitor',
@@ -1013,7 +1090,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   List<Widget> _buildLiveSections() {
     final live = _view;
-    final overall = _overallAssessment;
+    final test = _currentTest;
+    final testResult = _testAssessment;
     return [
       // Temperature and the test timer side by side, same height.
       IntrinsicHeight(
@@ -1052,12 +1130,29 @@ class _MyHomePageState extends State<MyHomePage> {
         axes: live.axes,
         pumpRunning: live.pumpRunning,
         online: live.online,
-        overall: live.pumpRunning ? live.liveAssessment : overall,
+        overall: live.liveAssessment,
         liveTotalRmsG: _barsTotalRms(live),
         healthyTotalRmsG: live.healthyReference.totalRmsG,
       ),
       const SizedBox(height: 12),
-      MachineHealthCard(assessment: overall),
+      // Calculated over the current or last test's whole duration.
+      MachineHealthCard(
+        assessment: testResult,
+        subtitle: _machineHealthSubtitle,
+      ),
+      const SizedBox(height: 12),
+      MachineProblemsCard(
+        assessment: testResult,
+        hasTest: test != null,
+        testRunning: test?.isRunning ?? false,
+      ),
+      const SizedBox(height: 12),
+      PreviousTestsCard(
+        tests: _previousTests,
+        loading: _testsLoading,
+        onDeleteAll: _selectedDeviceId.isEmpty ? null : _confirmDeleteAllTests,
+        formatDateTime: _formatDateTime,
+      ),
     ];
   }
 
@@ -1124,32 +1219,41 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        automaticallyImplyLeading: false,
+        titleSpacing: 12,
+        title: Row(
           children: [
-            Text(
-              widget.title,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const Text(
-              'Water pump maintenance monitoring',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            const SystemLogo(size: 36),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const Text(
+                    'Water pump maintenance monitoring',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: _selectedDeviceId.isEmpty
-                ? 'Search for devices'
-                : 'Refresh data',
-            onPressed: _selectedDeviceId.isEmpty
-                ? _fetchRegisteredDevices
-                : _refreshDashboard,
-            icon: Icon(_selectedDeviceId.isEmpty ? Icons.refresh : Icons.sync),
+          // The menu opens from the right, next to its button.
+          Builder(
+            builder: (context) => IconButton(
+              tooltip: 'Menu',
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+            ),
           ),
         ],
       ),
-      drawer: _buildAppDrawer(),
+      endDrawer: _buildAppDrawer(),
       body: _isRestoringSelectedDevice
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -1160,9 +1264,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
                   children: [
-                    PumpStatusCard(
-                      pumps: _pumpStatuses,
+                    PumpSwitchCard(
                       selectedDeviceId: _selectedDeviceId,
+                      online: _selectedPumpOnline,
                       onSelect: _selectDevice,
                     ),
                     const SizedBox(height: 12),

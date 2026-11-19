@@ -34,6 +34,17 @@ Duration? ageOfServerTime(String? value) {
   return DateTime.now().toUtc().difference(time.toUtc());
 }
 
+/// A backend time in phone time; without a time zone it is UTC (Render).
+DateTime? serverTime(dynamic value) {
+  final text = value?.toString() ?? '';
+  if (text.isEmpty) return null;
+  final hasTimezone = RegExp(
+    r'(Z|[+-]\d{2}:?\d{2})$',
+    caseSensitive: false,
+  ).hasMatch(text);
+  return DateTime.tryParse(hasTimezone ? text : '${text}Z')?.toLocal();
+}
+
 /// Whether a pump's ESP32 is sending data right now (e.g. connected to the
 /// phone's hotspot), from a device-list or status entry: the backend's
 /// "online" when it reports one, otherwise from its last update.
@@ -81,12 +92,16 @@ class AxisLevel {
 
 class PumpProblem {
   final String title;
+
+  /// The pump part it points to, e.g. "Bearing / motor", "Impeller".
+  final String component;
   final String severity;
   final String evidence;
   final String check;
 
   const PumpProblem({
     required this.title,
+    this.component = '',
     required this.severity,
     required this.evidence,
     required this.check,
@@ -94,6 +109,7 @@ class PumpProblem {
 
   factory PumpProblem.fromJson(Map<String, dynamic> json) => PumpProblem(
     title: json['title']?.toString() ?? '',
+    component: json['component']?.toString() ?? '',
     severity: json['severity']?.toString() ?? 'medium',
     evidence: json['evidence']?.toString() ?? '',
     check: json['check']?.toString() ?? '',
@@ -208,9 +224,13 @@ class Assessment {
 class PumpTest {
   /// none, running, finished or stopped.
   final String state;
+
+  /// e.g. "ESP32-002_test_20261119_071755" (null for older summaries).
+  final String? testId;
   final double minutes;
   final DateTime? startedAt;
   final DateTime? endsAt;
+  final DateTime? finishedAt;
   final double elapsedSeconds;
   final double remainingSeconds;
   final String? recordingFile;
@@ -219,9 +239,11 @@ class PumpTest {
 
   const PumpTest({
     required this.state,
+    this.testId,
     required this.minutes,
     required this.startedAt,
     required this.endsAt,
+    this.finishedAt,
     required this.elapsedSeconds,
     required this.remainingSeconds,
     required this.recordingFile,
@@ -235,8 +257,10 @@ class PumpTest {
   factory PumpTest.fromJson(Map<String, dynamic> json) => PumpTest(
     state: json['state']?.toString() ?? 'none',
     minutes: _toDouble(json['minutes']) ?? 0,
-    startedAt: DateTime.tryParse(json['started_at']?.toString() ?? ''),
-    endsAt: DateTime.tryParse(json['ends_at']?.toString() ?? ''),
+    testId: json['test_id']?.toString(),
+    startedAt: serverTime(json['started_at']),
+    finishedAt: serverTime(json['finished_at']),
+    endsAt: serverTime(json['ends_at']),
     elapsedSeconds: _toDouble(json['elapsed_seconds']) ?? 0,
     remainingSeconds: _toDouble(json['remaining_seconds']) ?? 0,
     recordingFile: json['recording_file']?.toString(),
@@ -258,6 +282,10 @@ class PumpTest {
     assessment: null,
   );
 }
+
+/// The two pumps (PUMP_BOARD in the ESP32 sketch): 2 = healthy, 1 = faulty.
+const String kHealthyPumpId = 'ESP32-002';
+const String kFaultyPumpId = 'ESP32-001';
 
 /// The healthy pump's per-axis values (data/healthy_reference/
 /// ESP32-002_healthy_reference.json, limits from models/pump_part_thresholds.json),

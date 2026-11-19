@@ -151,50 +151,103 @@ def store_device_in_firebase(device_id, device_name, location):
         return False
 
 
-# Sensor batches waiting to be written to Firebase by the background writer.
-_batch_queue = queue.Queue(maxsize=config.FIREBASE_BATCH_QUEUE_SIZE)
-_batch_writer = None
-_batch_writer_lock = threading.Lock()
+# Firebase writes waiting for the background writer: (function, arguments).
+_write_queue = queue.Queue(maxsize=config.FIREBASE_BATCH_QUEUE_SIZE)
+_writer = None
+_writer_lock = threading.Lock()
 
 
-def _write_batches():
+def _run_writes():
     while True:
-        device_id, samples, analysis_result = _batch_queue.get()
+        write, args = _write_queue.get()
         try:
-            store_sensor_batch_in_firebase(device_id, samples, analysis_result)
+            write(*args)
+        except Exception as exc:
+            print(f"Background Firebase write failed: {exc}")
         finally:
-            _batch_queue.task_done()
+            _write_queue.task_done()
 
 
-def queue_sensor_batch_for_firebase(device_id, samples, analysis_result=None):
-    """Write the batch to Firebase in the background and return at once:
-    the ESP32's upload must not wait for Firebase's network round trips (three
-    per batch), or its data arrives late and the pump looks offline. When
-    Firebase falls far behind, the oldest waiting batch is skipped. Returns
-    whether the batch was queued."""
-    global _batch_writer
+def write_in_background(write, *args):
+    """Run write(*args) (a Firebase write) on the background writer and
+    return at once. When Firebase falls far behind, the oldest waiting write
+    is skipped. Returns whether it was queued (False without Firebase)."""
+    global _writer
     if init_firebase() is None:
         return False
-    with _batch_writer_lock:
-        if _batch_writer is None or not _batch_writer.is_alive():
-            _batch_writer = threading.Thread(
-                target=_write_batches, name="firebase-batches", daemon=True
-            )
-            _batch_writer.start()
-    item = (device_id, list(samples), analysis_result)
+    with _writer_lock:
+        if _writer is None or not _writer.is_alive():
+            _writer = threading.Thread(target=_run_writes, name="firebase-writer", daemon=True)
+            _writer.start()
+    item = (write, args)
     try:
-        _batch_queue.put_nowait(item)
+        _write_queue.put_nowait(item)
     except queue.Full:
         try:
-            _batch_queue.get_nowait()  # skip the oldest
-            _batch_queue.task_done()
-            print("Firebase is behind: skipped the oldest sensor batch")
+            _write_queue.get_nowait()  # skip the oldest
+            _write_queue.task_done()
+            print("Firebase is behind: skipped the oldest waiting write")
         except queue.Empty:
             pass
         try:
-            _batch_queue.put_nowait(item)
+            _write_queue.put_nowait(item)
         except queue.Full:
             return False
+    return True
+
+
+def queue_sensor_batch_for_firebase(device_id, samples, analysis_result=None):
+    """Write the batch to Firebase in the background: the ESP32's upload must
+    not wait for Firebase's network round trips (three per batch), or its data
+    arrives late and the pump looks offline. Returns whether it was queued."""
+    return write_in_background(
+        store_sensor_batch_in_firebase, device_id, list(samples), analysis_result
+    )
+
+
+# ---------------------------------------------------------------------------
+# Timed tests (app_tests/<device>/<test id>): each test's summary as JSON text,
+# so keys Firebase does not allow ("/" in pump part names) and empty values
+# come back exactly as saved.
+# ---------------------------------------------------------------------------
+
+def _tests_ref(device_id):
+    return init_firebase().reference(f"app_tests/{firebase_safe_key(device_id)}")
+
+
+def save_test_in_firebase(device_id, test_id, summary):
+    if init_firebase() is None:
+        return False
+    _tests_ref(device_id).child(firebase_safe_key(test_id)).set({
+        "started_at": summary.get("started_at"),
+        "summary_json": json.dumps(summary),
+    })
+    return True
+
+
+def get_tests_from_firebase(device_id):
+    """The device's saved test summaries, or None when Firebase is not available."""
+    if init_firebase() is None:
+        return None
+    try:
+        stored = _tests_ref(device_id).get() or {}
+    except Exception as exc:
+        print(f"Firebase test history read failed: {exc}")
+        return None
+    tests = []
+    for item in (stored.values() if isinstance(stored, dict) else []):
+        try:
+            tests.append(json.loads(item["summary_json"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return tests
+
+
+def delete_tests_from_firebase(device_id):
+    """Delete the device's saved tests; None when Firebase is not available."""
+    if init_firebase() is None:
+        return None
+    _tests_ref(device_id).delete()
     return True
 
 

@@ -363,6 +363,58 @@ class LiveEndpointTests(DashboardTestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def run_test(self, minutes=5, seconds=10):
+        """Start a test, send running data, then stop it; returns its summary."""
+        self.send(pump_samples(1, running=False))
+        self.client.post(f"/api/esp32/test/{self.DEVICE_ID}/start", json={"minutes": minutes})
+        self.send(pump_samples(seconds))
+        return self.client.post(f"/api/esp32/test/{self.DEVICE_ID}/stop").get_json()["test"]
+
+    def tests_list(self):
+        return self.client.get(f"/api/esp32/tests/{self.DEVICE_ID}").get_json()["tests"]
+
+    def test_previous_tests_are_listed_newest_first_with_their_results(self):
+        with patch.object(test_session, "datetime") as clock:
+            clock.now.return_value = datetime(2026, 11, 19, 9, 0, 0)
+            first = self.run_test()
+            clock.now.return_value = datetime(2026, 11, 19, 10, 0, 0)
+            second = self.run_test(seconds=8)
+        tests = self.tests_list()
+        self.assertEqual([t["test_id"] for t in tests], [second["test_id"], first["test_id"]])
+        self.assertEqual(tests[0]["state"], "stopped")
+        self.assertEqual(tests[0]["assessment"]["verdict"], "HEALTHY")
+        self.assertGreater(tests[1]["assessment"]["windows"], 0)
+
+    def test_the_last_test_still_shows_after_a_server_restart(self):
+        finished = self.run_test()
+        test_session.sessions.clear()  # a restart: nothing in memory
+        test_session._last_saved.clear()
+        shown = self.live()["test"]
+        self.assertEqual(shown["test_id"], finished["test_id"])
+        self.assertEqual(shown["assessment"]["verdict"], "HEALTHY")
+
+    def test_deleting_all_previous_tests_keeps_a_running_one(self):
+        self.run_test()
+        self.client.post(f"/api/esp32/test/{self.DEVICE_ID}/start", json={"minutes": 20})
+        self.assertEqual(len(self.tests_list()), 1)
+        response = self.client.delete(f"/api/esp32/tests/{self.DEVICE_ID}").get_json()
+        self.assertEqual(response["deleted"], 1)
+        self.assertEqual(self.tests_list(), [])
+        self.assertEqual(self.live()["test"]["state"], "running")  # still running
+        self.client.post(f"/api/esp32/test/{self.DEVICE_ID}/stop")
+        self.client.delete(f"/api/esp32/tests/{self.DEVICE_ID}")
+        self.assertEqual(self.live()["test"], {"state": "none"})
+
+    def test_a_finished_test_is_saved_to_firebase(self):
+        with patch.object(firebase_store, "write_in_background", return_value=False) as background:
+            finished = self.run_test()
+        writes = [c.args for c in background.call_args_list
+                  if c.args[0] is firebase_store.save_test_in_firebase]
+        self.assertEqual(len(writes), 1)
+        _, device_id, test_id, summary = writes[0]
+        self.assertEqual((device_id, test_id), (self.DEVICE_ID, finished["test_id"]))
+        self.assertEqual(summary["assessment"]["verdict"], "HEALTHY")
+
     def test_stopping_a_test_early(self):
         self.send(pump_samples(1, running=False))  # the ESP32 is connected
         self.client.post(f"/api/esp32/test/{self.DEVICE_ID}/start", json={"minutes": 20})

@@ -87,40 +87,40 @@ void main() {
       expect(isDeviceOnline({'last_update': recent, 'online': false}), isFalse);
     });
 
-    testWidgets('pump sensors: each pump online or offline, tap to show it', (
-      tester,
-    ) async {
-      String? selected;
-      await tester.pumpWidget(
-        phone(
-          PumpStatusCard(
-            pumps: const [
-              PumpStatus(
-                deviceId: 'ESP32-001',
-                name: 'ESP32 Pump Sensor1',
-                location: 'Faulty Pump',
-                online: false,
-              ),
-              PumpStatus(
-                deviceId: 'ESP32-002',
-                name: 'ESP32 Pump Sensor2',
-                location: 'Pump Area',
-                online: true,
-              ),
-            ],
-            selectedDeviceId: 'ESP32-001',
-            onSelect: (id) => selected = id,
+    testWidgets(
+      'pump sensors: one switch between the healthy and faulty pump',
+      (tester) async {
+        var selected = kHealthyPumpId;
+        Widget card({required bool online}) => phone(
+          StatefulBuilder(
+            builder: (context, setState) => PumpSwitchCard(
+              selectedDeviceId: selected,
+              online: online,
+              onSelect: (id) => setState(() => selected = id),
+            ),
           ),
-        ),
-      );
-      expect(find.text('1 of 2 online'), findsOneWidget);
-      expect(find.text('Online'), findsOneWidget);
-      expect(find.text('Offline'), findsOneWidget);
-      expect(find.text('ESP32-002 · Pump Area'), findsOneWidget);
-      await tester.tap(find.text('ESP32 Pump Sensor2'));
-      expect(selected, 'ESP32-002');
-      expect(tester.takeException(), isNull);
-    });
+        );
+        await tester.pumpWidget(card(online: true));
+        expect(find.text('Healthy pump'), findsOneWidget);
+        expect(find.text('Faulty pump'), findsOneWidget);
+        expect(find.text('Online'), findsOneWidget);
+        // No list of pumps, only the switch.
+        expect(find.byType(ListTile), findsNothing);
+        expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+
+        await tester.tap(find.byType(Switch));
+        await tester.pump();
+        expect(selected, kFaultyPumpId);
+        expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+        await tester.tap(find.byType(Switch));
+        await tester.pump();
+        expect(selected, kHealthyPumpId);
+
+        await tester.pumpWidget(card(online: false));
+        expect(find.text('Offline'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
 
     testWidgets('running without per-axis levels: "No data", not "Pump off"', (
       tester,
@@ -353,6 +353,144 @@ void main() {
           .faultyPercent,
       20,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('machine health says which test it is calculated over', (
+    tester,
+  ) async {
+    final result = Assessment.fromJson({
+      'verdict': 'HEALTHY',
+      'health_percent': 90,
+      'risk_score': 10,
+      'windows': 12,
+    });
+    await tester.pumpWidget(
+      phone(
+        MachineHealthCard(
+          assessment: result,
+          subtitle: 'Last test: 11/19/2026 3:30 PM · 20 min test, ran 20:00',
+        ),
+      ),
+    );
+    expect(
+      find.text('Last test: 11/19/2026 3:30 PM · 20 min test, ran 20:00'),
+      findsOneWidget,
+    );
+    expect(find.text('10%'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  group('machine problems', () {
+    testWidgets('a faulty test lists the problems: part, data, what to check', (
+      tester,
+    ) async {
+      final faulty = loadFaultyFixture().test.assessment!;
+      await tester.pumpWidget(
+        phone(MachineProblemsCard(assessment: faulty, hasTest: true)),
+      );
+      expect(find.text('Machine Problems'), findsOneWidget);
+      expect(
+        find.text('Radial bearing wear or rotor imbalance'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('What to check'), findsWidgets);
+      expect(find.text('No problems found'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a healthy test gets a positive message', (tester) async {
+      final healthy = Assessment.fromJson({
+        'verdict': 'HEALTHY',
+        'health_percent': 96,
+        'risk_score': 4,
+        'windows': 900,
+        'problems': <dynamic>[],
+      });
+      await tester.pumpWidget(
+        phone(MachineProblemsCard(assessment: healthy, hasTest: true)),
+      );
+      expect(find.text('No problems found'), findsOneWidget);
+      expect(find.text('No problems'), findsOneWidget); // chip
+      expect(find.textContaining('runs like the healthy pump'), findsOneWidget);
+    });
+
+    testWidgets('before the first test it asks for one', (tester) async {
+      await tester.pumpWidget(
+        phone(
+          MachineProblemsCard(assessment: Assessment.empty(), hasTest: false),
+        ),
+      );
+      expect(find.text('No test yet'), findsOneWidget);
+    });
+  });
+
+  testWidgets('previous tests: all data of each test, delete all', (
+    tester,
+  ) async {
+    final faulty = loadFaultyFixture().test;
+    final older = PumpTest.fromJson({
+      'test_id': 'ESP32-001_test_20261118_154725',
+      'state': 'finished',
+      'minutes': 20,
+      'started_at': '2026-11-18T15:47:25+08:00',
+      'finished_at': '2026-11-18T16:07:25+08:00',
+      'elapsed_seconds': 1200,
+      'assessment': {
+        'verdict': 'HEALTHY',
+        'health_percent': 95,
+        'risk_score': 5,
+        'windows': 900,
+        'running_seconds': 1152,
+      },
+    });
+    var deleted = 0;
+    await tester.pumpWidget(
+      phone(
+        PreviousTestsCard(
+          tests: [faulty, older],
+          loading: false,
+          onDeleteAll: () => deleted++,
+          formatDateTime: (value) => value == null
+              ? '—'
+              : '${value.month}/${value.day} ${value.hour}:${value.minute}',
+        ),
+      ),
+    );
+    expect(find.text('Previous tests'), findsOneWidget);
+    expect(find.byType(ExpansionTile), findsNWidgets(2));
+    expect(
+      find.textContaining('20 min test · 100% toward faulty'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('20 min test · 5% toward faulty'),
+      findsOneWidget,
+    );
+
+    // Opening a test shows all its data.
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    for (final label in [
+      'Started',
+      'Duration',
+      'Result',
+      'Toward faulty',
+      'Risk score',
+      'Vibration vs healthy',
+      'Unusual windows',
+      'X axis',
+      'Y axis',
+      'Z axis',
+      'Temperature',
+      'Running data',
+      'Problems',
+    ]) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+
+    await tester.tap(find.text('Delete all'));
+    expect(deleted, 1);
     expect(tester.takeException(), isNull);
   });
 

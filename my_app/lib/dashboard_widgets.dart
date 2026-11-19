@@ -168,87 +168,82 @@ class StatusChip extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Pump sensors: every pump and whether its ESP32 is online
+// Pump sensors: switch between the healthy and the faulty pump
 // ---------------------------------------------------------------------------
 
-class PumpStatus {
-  const PumpStatus({
-    required this.deviceId,
-    required this.name,
-    required this.location,
-    required this.online,
-  });
-
-  final String deviceId;
-  final String name;
-  final String location;
-
-  /// Its ESP32 is sending data (e.g. connected to the phone's hotspot).
-  final bool online;
-}
-
-/// Every pump with its sensors Online or Offline; tap one to show it below.
-class PumpStatusCard extends StatelessWidget {
-  const PumpStatusCard({
+/// Pump sensors: one switch between the healthy and the faulty pump (the
+/// dashboard shows the one selected) and whether that pump's sensors are
+/// online (its ESP32 is sending data).
+class PumpSwitchCard extends StatelessWidget {
+  const PumpSwitchCard({
     super.key,
-    required this.pumps,
     required this.selectedDeviceId,
+    required this.online,
     required this.onSelect,
+    this.healthyPumpId = kHealthyPumpId,
+    this.faultyPumpId = kFaultyPumpId,
   });
 
-  final List<PumpStatus> pumps;
   final String selectedDeviceId;
+
+  /// The selected pump's sensors are online.
+  final bool online;
   final ValueChanged<String> onSelect;
+  final String healthyPumpId;
+  final String faultyPumpId;
 
   @override
   Widget build(BuildContext context) {
-    final onlineCount = pumps.where((pump) => pump.online).length;
+    final faulty = selectedDeviceId == faultyPumpId;
+    final healthy = selectedDeviceId == healthyPumpId;
+    TextStyle side(bool active, Color color) => TextStyle(
+      fontWeight: FontWeight.w800,
+      fontSize: 14,
+      color: active ? color : kMuted,
+    );
     return SectionCard(
       icon: Icons.sensors,
       title: 'Pump sensors',
-      trailing: pumps.isEmpty
-          ? null
-          : StatusChip(
-              label: '$onlineCount of ${pumps.length} online',
-              color: onlineCount > 0 ? kHealthy : kOff,
+      trailing: StatusChip(
+        label: online ? 'Online' : 'Offline',
+        color: online ? kHealthy : kOff,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: InkWell(
+              onTap: () => onSelect(healthyPumpId),
+              child: Text(
+                'Healthy pump',
+                textAlign: TextAlign.end,
+                style: side(healthy, kHealthy),
+              ),
             ),
-      child: pumps.isEmpty
-          ? const Text(
-              'No pumps yet. Each pump appears here as soon as its ESP32 '
-              'connects (e.g. to your phone\'s hotspot) and sends data.',
-              style: TextStyle(color: kMuted),
-            )
-          : Column(
-              children: [
-                for (final pump in pumps)
-                  ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    selected: pump.deviceId == selectedDeviceId,
-                    selectedTileColor: kReference.withAlpha(18),
-                    leading: Icon(
-                      pump.online ? Icons.sensors : Icons.sensors_off,
-                      color: pump.online ? kHealthy : kOff,
-                    ),
-                    title: Text(
-                      pump.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: kInk,
-                      ),
-                    ),
-                    subtitle: Text('${pump.deviceId} · ${pump.location}'),
-                    trailing: StatusChip(
-                      label: pump.online ? 'Online' : 'Offline',
-                      color: pump.online ? kHealthy : kOff,
-                    ),
-                    onTap: () => onSelect(pump.deviceId),
-                  ),
-              ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Switch(
+              value: faulty,
+              activeThumbColor: Colors.white,
+              activeTrackColor: kFaulty,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: kHealthy,
+              trackOutlineColor: const WidgetStatePropertyAll(
+                Colors.transparent,
+              ),
+              onChanged: (toFaulty) =>
+                  onSelect(toFaulty ? faultyPumpId : healthyPumpId),
             ),
+          ),
+          Flexible(
+            child: InkWell(
+              onTap: () => onSelect(faultyPumpId),
+              child: Text('Faulty pump', style: side(faulty, kFaulty)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1018,9 +1013,12 @@ class _TestSettingsDialogState extends State<TestSettingsDialog> {
 /// Machine health, in two equal halves: the health bar (left) and the values
 /// behind it (right), each centred.
 class MachineHealthCard extends StatelessWidget {
-  const MachineHealthCard({super.key, required this.assessment});
+  const MachineHealthCard({super.key, required this.assessment, this.subtitle});
 
   final Assessment assessment;
+
+  /// Which data the values are calculated over, e.g. the test and its time.
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -1032,94 +1030,114 @@ class MachineHealthCard extends StatelessWidget {
     return SectionCard(
       icon: Icons.health_and_safety_outlined,
       title: 'Machine health',
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      faulty == null ? '—' : '${faulty.toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        color: faulty == null ? kOff : color,
-                      ),
-                    ),
-                    const Text(
-                      '0% healthy · 100% faulty',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: kMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    VerticalHealthBar(faultyPercent: faulty),
-                  ],
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (subtitle != null) ...[
+            Text(
+              subtitle!,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: kMuted,
               ),
             ),
-            const VerticalDivider(width: 20, thickness: 1, color: kTrack),
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _StackedInfo(
-                      label: 'Vibration vs healthy pump',
-                      value: a.totalRmsG == null
-                          ? '—'
-                          : '${a.totalRmsG!.toStringAsFixed(2)} g vs '
-                                '${a.healthyTotalRmsG?.toStringAsFixed(2) ?? '—'} g '
-                                '(${formatPercent(a.deviationPercent, signed: true)})',
-                      valueColor: a.deviationPercent == null
-                          ? null
-                          : riskColor(a.riskParts['vibration_deviation']),
-                    ),
-                    _StackedInfo(
-                      label: 'Unusual vibration windows',
-                      value: a.anomalyWindowPercent == null
-                          ? '—'
-                          : '${formatPercent(a.anomalyWindowPercent)} (healthy pump: up to 45%)',
-                      valueColor: a.anomalyWindowPercent == null
-                          ? null
-                          : riskColor(a.riskParts['unusual_windows']),
-                    ),
-                    _StackedInfo(
-                      label: 'Risk score',
-                      value: a.riskScore == null
-                          ? '—'
-                          : '${a.riskScore!.toStringAsFixed(0)} / 100',
-                      valueColor: a.riskScore == null
-                          ? null
-                          : riskColor(a.riskScore),
-                    ),
-                    _StackedInfo(
-                      label: 'Temperature (running)',
-                      value: a.temperatureMaxC == null
-                          ? '—'
-                          : 'max ${a.temperatureMaxC!.toStringAsFixed(1)} °C '
-                                '(healthy max ${a.healthyTemperatureMaxC?.toStringAsFixed(1) ?? '—'} °C)',
-                      valueColor: a.temperatureMaxC == null
-                          ? null
-                          : riskColor(a.riskParts['temperature']),
-                    ),
-                    _StackedInfo(
-                      label: 'Running data',
-                      value: a.windows == 0
-                          ? 'none yet'
-                          : '${a.windows} windows · ${formatDuration(a.runningSeconds)}',
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            const SizedBox(height: 10),
           ],
-        ),
+          _machineHealthBody(a, color, faulty),
+        ],
+      ),
+    );
+  }
+
+  Widget _machineHealthBody(Assessment a, Color color, double? faulty) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    faulty == null ? '—' : '${faulty.toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: faulty == null ? kOff : color,
+                    ),
+                  ),
+                  const Text(
+                    '0% healthy · 100% faulty',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: kMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  VerticalHealthBar(faultyPercent: faulty),
+                ],
+              ),
+            ),
+          ),
+          const VerticalDivider(width: 20, thickness: 1, color: kTrack),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _StackedInfo(
+                    label: 'Vibration vs healthy pump',
+                    value: a.totalRmsG == null
+                        ? '—'
+                        : '${a.totalRmsG!.toStringAsFixed(2)} g vs '
+                              '${a.healthyTotalRmsG?.toStringAsFixed(2) ?? '—'} g '
+                              '(${formatPercent(a.deviationPercent, signed: true)})',
+                    valueColor: a.deviationPercent == null
+                        ? null
+                        : riskColor(a.riskParts['vibration_deviation']),
+                  ),
+                  _StackedInfo(
+                    label: 'Unusual vibration windows',
+                    value: a.anomalyWindowPercent == null
+                        ? '—'
+                        : '${formatPercent(a.anomalyWindowPercent)} (healthy pump: up to 45%)',
+                    valueColor: a.anomalyWindowPercent == null
+                        ? null
+                        : riskColor(a.riskParts['unusual_windows']),
+                  ),
+                  _StackedInfo(
+                    label: 'Risk score',
+                    value: a.riskScore == null
+                        ? '—'
+                        : '${a.riskScore!.toStringAsFixed(0)} / 100',
+                    valueColor: a.riskScore == null
+                        ? null
+                        : riskColor(a.riskScore),
+                  ),
+                  _StackedInfo(
+                    label: 'Temperature (running)',
+                    value: a.temperatureMaxC == null
+                        ? '—'
+                        : 'max ${a.temperatureMaxC!.toStringAsFixed(1)} °C '
+                              '(healthy max ${a.healthyTemperatureMaxC?.toStringAsFixed(1) ?? '—'} °C)',
+                    valueColor: a.temperatureMaxC == null
+                        ? null
+                        : riskColor(a.riskParts['temperature']),
+                  ),
+                  _StackedInfo(
+                    label: 'Running data',
+                    value: a.windows == 0
+                        ? 'none yet'
+                        : '${a.windows} windows · ${formatDuration(a.runningSeconds)}',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1339,4 +1357,441 @@ class _HealthBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _HealthBarPainter oldDelegate) =>
       oldDelegate.faultyPercent != faultyPercent;
+}
+
+// ---------------------------------------------------------------------------
+// System logo
+// ---------------------------------------------------------------------------
+
+/// The system's logo: a water drop in a teal rounded square.
+class SystemLogo extends StatelessWidget {
+  const SystemLogo({super.key, this.size = 36});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2F1),
+        borderRadius: BorderRadius.circular(size * 0.22),
+      ),
+      child: Icon(
+        Icons.water_drop_outlined,
+        color: kReference,
+        size: size * 0.6,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Machine problems
+// ---------------------------------------------------------------------------
+
+Color _severityColor(String severity) =>
+    severity.toLowerCase() == 'high' ? kFaulty : kWarning;
+
+IconData _componentIcon(String component) {
+  final part = component.toLowerCase();
+  if (part.startsWith('bearing')) return Icons.settings;
+  if (part.startsWith('motor')) return Icons.electric_bolt;
+  if (part.startsWith('impeller')) return Icons.cyclone;
+  if (part.startsWith('mounting')) return Icons.construction;
+  return Icons.report_problem_outlined;
+}
+
+/// Machine Problems: what the test's data points to (bearing, motor,
+/// impeller, ...), with the data behind it and what to check, or a positive
+/// message when the pump is healthy.
+class MachineProblemsCard extends StatelessWidget {
+  const MachineProblemsCard({
+    super.key,
+    required this.assessment,
+    required this.hasTest,
+    this.testRunning = false,
+  });
+
+  /// The test's result (the same data as Machine health).
+  final Assessment assessment;
+  final bool hasTest;
+  final bool testRunning;
+
+  @override
+  Widget build(BuildContext context) {
+    final problems = assessment.problems;
+    Widget? trailing;
+    Widget child;
+    if (!hasTest) {
+      child = const _ProblemsMessage(
+        icon: Icons.play_circle_outline,
+        color: kMuted,
+        title: 'No test yet',
+        text: 'Start a test: the pump is checked for problems over the test.',
+      );
+    } else if (!assessment.hasData) {
+      child = _ProblemsMessage(
+        icon: Icons.hourglass_empty,
+        color: kMuted,
+        title: testRunning ? 'Collecting data…' : 'No running data',
+        text: testRunning
+            ? 'Switch the pump ON: problems are found as the test runs.'
+            : 'The test had no running data. Run a new test with the pump ON.',
+      );
+    } else if (problems.isEmpty) {
+      final healthy = assessment.verdict == 'HEALTHY';
+      trailing = StatusChip(
+        label: healthy ? 'No problems' : 'Monitor',
+        color: healthy ? kHealthy : kMonitor,
+      );
+      child = healthy
+          ? const _ProblemsMessage(
+              icon: Icons.check_circle,
+              color: kHealthy,
+              title: 'No problems found',
+              text:
+                  'The pump runs like the healthy pump: bearings, motor and '
+                  'impeller look normal. Keep testing it regularly.',
+            )
+          : const _ProblemsMessage(
+              icon: Icons.visibility,
+              color: kMonitor,
+              title: 'No specific problem found',
+              text:
+                  'Some readings differ from the healthy pump, but none points '
+                  'to one part. Keep monitoring and run another test.',
+            );
+    } else {
+      final worst = problems.any((p) => p.severity.toLowerCase() == 'high')
+          ? kFaulty
+          : kWarning;
+      trailing = StatusChip(label: '${problems.length} found', color: worst);
+      child = Column(
+        children: [
+          for (var i = 0; i < problems.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _ProblemTile(problem: problems[i]),
+          ],
+        ],
+      );
+    }
+    return SectionCard(
+      icon: Icons.build_circle_outlined,
+      title: 'Machine Problems',
+      trailing: trailing,
+      child: child,
+    );
+  }
+}
+
+class _ProblemsMessage extends StatelessWidget {
+  const _ProblemsMessage({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 28),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: color == kMuted ? kInk : color,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(text, style: const TextStyle(color: kMuted, height: 1.3)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProblemTile extends StatelessWidget {
+  const _ProblemTile({required this.problem});
+
+  final PumpProblem problem;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _severityColor(problem.severity);
+    final high = problem.severity.toLowerCase() == 'high';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withAlpha(14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_componentIcon(problem.component), color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  problem.title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 6),
+              StatusChip(label: high ? 'High' : 'Medium', color: color),
+            ],
+          ),
+          if (problem.component.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              problem.component,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(problem.evidence, style: const TextStyle(fontSize: 12.5)),
+          const SizedBox(height: 6),
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(
+                  text: 'What to check: ',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                TextSpan(text: problem.check),
+              ],
+            ),
+            style: const TextStyle(fontSize: 12.5, color: kInk),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Previous tests
+// ---------------------------------------------------------------------------
+
+/// The pump's previous tests, newest first, each with all its data; a button
+/// deletes them all.
+class PreviousTestsCard extends StatelessWidget {
+  const PreviousTestsCard({
+    super.key,
+    required this.tests,
+    required this.loading,
+    required this.onDeleteAll,
+    required this.formatDateTime,
+  });
+
+  /// Null until loaded.
+  final List<PumpTest>? tests;
+  final bool loading;
+  final VoidCallback? onDeleteAll;
+  final String Function(DateTime?) formatDateTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final list = tests ?? const <PumpTest>[];
+    Widget child;
+    if (tests == null && loading) {
+      child = const Padding(
+        padding: EdgeInsets.all(12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    } else if (list.isEmpty) {
+      child = const Text(
+        'No previous tests yet. Each finished or stopped test appears here.',
+        style: TextStyle(color: kMuted),
+      );
+    } else {
+      child = Column(
+        children: [
+          for (final test in list)
+            _PreviousTestTile(test: test, formatDateTime: formatDateTime),
+        ],
+      );
+    }
+    return SectionCard(
+      icon: Icons.history,
+      title: 'Previous tests',
+      trailing: TextButton.icon(
+        onPressed: list.isEmpty || onDeleteAll == null ? null : onDeleteAll,
+        style: TextButton.styleFrom(
+          foregroundColor: kFaulty,
+          visualDensity: VisualDensity.compact,
+        ),
+        icon: const Icon(Icons.delete_outline, size: 18),
+        label: const Text('Delete all'),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _PreviousTestTile extends StatelessWidget {
+  const _PreviousTestTile({required this.test, required this.formatDateTime});
+
+  final PumpTest test;
+  final String Function(DateTime?) formatDateTime;
+
+  static String _g(double? value) =>
+      value == null ? '—' : '${value.toStringAsFixed(2)} g';
+
+  static String _axis(AxisLevel level) {
+    if (level.rmsG == null) return '—';
+    final times = level.timesHealthy == null
+        ? ''
+        : ', ${level.timesHealthy!.toStringAsFixed(1)}× healthy';
+    return '${_g(level.rmsG)} (${levelLabel(level.status)}$times)';
+  }
+
+  List<(String, String)> _rows(Assessment a) {
+    final faulty = a.faultyPercent;
+    final minutes = test.minutes.toStringAsFixed(test.minutes % 1 == 0 ? 0 : 1);
+    final temperature = a.temperatureMaxC == null
+        ? '—'
+        : 'max ${a.temperatureMaxC!.toStringAsFixed(1)} °C'
+              '${a.temperatureMeanC == null ? '' : ', mean ${a.temperatureMeanC!.toStringAsFixed(1)} °C'}'
+              ' (healthy max ${a.healthyTemperatureMaxC?.toStringAsFixed(1) ?? '—'} °C)';
+    return [
+      ('Started', formatDateTime(test.startedAt)),
+      ('Ended', formatDateTime(test.finishedAt ?? test.endsAt)),
+      (
+        'Duration',
+        '$minutes min set · ran ${formatDuration(test.elapsedSeconds)}'
+            '${test.state == 'stopped' ? ' (stopped early)' : ''}',
+      ),
+      (
+        'Result',
+        a.hasData
+            ? '${levelLabel(a.verdict)}: ${a.verdictText}'
+            : 'No running data',
+      ),
+      (
+        'Toward faulty',
+        faulty == null
+            ? '—'
+            : '${faulty.toStringAsFixed(0)}% (0% healthy · 100% faulty)',
+      ),
+      (
+        'Risk score',
+        a.riskScore == null ? '—' : '${a.riskScore!.toStringAsFixed(0)} / 100',
+      ),
+      (
+        'Vibration vs healthy',
+        a.totalRmsG == null
+            ? '—'
+            : '${_g(a.totalRmsG)} vs ${_g(a.healthyTotalRmsG)} '
+                  '(${formatPercent(a.deviationPercent, signed: true)})',
+      ),
+      (
+        'Unusual windows',
+        a.anomalyWindowPercent == null
+            ? '—'
+            : '${formatPercent(a.anomalyWindowPercent)} '
+                  '(model ${formatPercent(a.modelUnusualPercent)})',
+      ),
+      for (final level in a.axes) ('${level.axis} axis', _axis(level)),
+      ('Temperature', temperature),
+      (
+        'Running data',
+        a.windows == 0
+            ? 'none'
+            : '${a.windows} windows · ${formatDuration(a.runningSeconds)}',
+      ),
+      (
+        'Problems',
+        a.problems.isEmpty
+            ? (a.hasData ? 'None found' : '—')
+            : a.problems.map((p) => p.title).join('\n'),
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = test.assessment ?? Assessment.empty();
+    final color = a.hasData ? levelColor(a.verdict) : kOff;
+    final faulty = a.faultyPercent;
+    return Theme(
+      // No divider lines from the expansion tile inside the card.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 10),
+        leading: Icon(verdictIcon(a.verdict), color: color),
+        title: Text(
+          formatDateTime(test.startedAt),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${test.minutes.toStringAsFixed(0)} min test · '
+          '${faulty == null ? 'no data' : '${faulty.toStringAsFixed(0)}% toward faulty'}'
+          '${test.state == 'stopped' ? ' · stopped' : ''}',
+          style: const TextStyle(fontSize: 12, color: kMuted),
+        ),
+        trailing: StatusChip(
+          label: a.hasData ? levelLabel(a.verdict) : 'No data',
+          color: color,
+        ),
+        children: [
+          for (final (label, value) in _rows(a))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 130,
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: kMuted,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

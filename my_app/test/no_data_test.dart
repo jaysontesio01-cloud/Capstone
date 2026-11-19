@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:water_pump_maintenance/dashboard_widgets.dart';
 import 'package:water_pump_maintenance/main.dart';
 
 Future<void> startApp(WidgetTester tester) async {
@@ -25,6 +26,10 @@ Future<void> closeApp(WidgetTester tester) async {
 void expectAllSections() {
   for (final text in [
     'Pump sensors',
+    'Healthy pump',
+    'Faulty pump',
+    'Machine Problems',
+    'Previous tests',
     'Vibration (X, Y, Z)',
     'X axis',
     'Y axis',
@@ -36,6 +41,16 @@ void expectAllSections() {
     expect(find.text(text), findsOneWidget, reason: text);
   }
   expect(find.text('Predictive maintenance'), findsNothing); // removed
+  // Header: the menu button on the right; no refresh button.
+  expect(find.byTooltip('Menu'), findsOneWidget);
+  expect(find.byIcon(Icons.sync), findsNothing);
+  expect(find.byType(SystemLogo), findsOneWidget);
+  // Before any test: Machine health and Machine Problems ask for one.
+  expect(
+    find.text('No test yet: start a test to calculate the machine health.'),
+    findsOneWidget,
+  );
+  expect(find.text('No test yet'), findsOneWidget);
   // The healthy pump's values are built in.
   expect(find.textContaining('Healthy 0.50 g'), findsOneWidget);
   expect(find.textContaining('Healthy 0.15 g'), findsOneWidget);
@@ -58,7 +73,7 @@ void main() {
       isNull,
     ); // Start test needs a pump
     expect(find.text('No pump selected'), findsNothing);
-    expect(find.textContaining('No pumps yet'), findsOneWidget);
+    expect(find.text('Offline'), findsOneWidget); // no pump to show
     expect(tester.takeException(), isNull);
     await closeApp(tester);
   });
@@ -72,7 +87,7 @@ void main() {
     expectAllSections();
     expect(find.text('Sensor offline'), findsOneWidget); // vibration section
     expect(find.text('No data'), findsNWidgets(3)); // one chip per axis
-    expect(find.text('Offline'), findsOneWidget); // the pump in Pump sensors
+    expect(find.text('Offline'), findsOneWidget); // its sensors (Pump sensors)
     expect(find.text('Start test'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await closeApp(tester);

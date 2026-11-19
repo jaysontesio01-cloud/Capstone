@@ -7,6 +7,8 @@ POST /api/esp32/test/<id>/start   {"minutes": 20}: start a timed test
                                   (409 while the ESP32 is not sending data)
 POST /api/esp32/test/<id>/stop    stop it early
 GET  /api/esp32/test/<id>         the test, judged over all its running data
+GET  /api/esp32/tests/<id>        the previous (finished or stopped) tests, newest first
+DELETE /api/esp32/tests/<id>      delete all previous tests of the device
 """
 
 from flask import Blueprint, jsonify, request
@@ -20,7 +22,7 @@ from ..device_registry import (
 )
 from ..health_assessment import healthy_reference_summary, live_view
 from ..recorder import active_recordings, recording_lock, recording_summary
-from ..test_session import start_test, stop_test, test_summary
+from ..test_session import delete_tests, saved_tests, start_test, stop_test, test_summary
 
 bp = Blueprint("live", __name__)
 
@@ -92,3 +94,23 @@ def esp32_test(device_id):
     if not is_esp32_device_id(device_id):
         return _not_esp32()
     return jsonify({"status": "success", "test": test_summary(device_id)}), 200
+
+
+@bp.route("/api/esp32/tests/<device_id>", methods=["GET"])
+def esp32_tests(device_id):
+    if not is_esp32_device_id(device_id):
+        return _not_esp32()
+    try:
+        return jsonify({"status": "success", "tests": saved_tests(device_id)}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route("/api/esp32/tests/<device_id>", methods=["DELETE"])
+def esp32_tests_delete(device_id):
+    if not is_esp32_device_id(device_id):
+        return _not_esp32()
+    try:
+        return jsonify({"status": "success", "deleted": delete_tests(device_id)}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500

@@ -35,13 +35,16 @@ AXIS_KEYS = {"x": "X-axis", "y": "Y-axis", "z": "Z-axis"}
 # What a raised axis points to, and what to check (pump parts as in anomaly_model.PUMP_PARTS).
 AXIS_PROBLEMS = {
     "x": ("Shaft misalignment or lateral bearing wear",
-          "Check the shaft/coupling alignment, the bearing play and the base bolts."),
+          "Check the shaft/coupling alignment, the bearing play and the base bolts.",
+          "Bearing / shaft"),
     "y": ("Radial bearing wear or rotor imbalance",
           "Listen for grinding or rumbling at the motor, check the bearings for play "
-          "and the motor housing bolts for looseness."),
+          "and the motor housing bolts for looseness.",
+          "Bearing / motor"),
     "z": ("Impeller damage, blockage or cavitation",
           "Check the impeller for debris or damage, and the suction side for air leaks "
-          "or a low water level."),
+          "or a low water level.",
+          "Impeller"),
 }
 
 VERDICTS = {
@@ -247,7 +250,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
         if level["status"] not in ("warning", "faulty"):
             continue
         axis = level["axis"].lower()
-        title, check = AXIS_PROBLEMS[axis]
+        title, check, component = AXIS_PROBLEMS[axis]
         healthy = level["healthy_rms_g"]
         evidence = f"{level['axis']}-axis vibration {level['rms_g']:.2f} g"
         if healthy:
@@ -255,6 +258,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
         evidence += f"; healthy limit {level['healthy_limit_g']:.2f} g ({level['pump_part']})."
         problems.append({
             "title": title,
+            "component": component,
             "severity": "high" if level["status"] == "faulty" else "medium",
             "evidence": evidence,
             "check": check,
@@ -265,6 +269,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
     if deviation is not None and deviation <= -warning:
         problems.append({
             "title": "Pump not running at normal speed",
+            "component": "Motor / impeller",
             "severity": "high",
             "evidence": f"Vibration only {100 + deviation:.0f}% of the healthy pump's "
                         f"{healthy_total:.2f} g while the pump is on ({deviation:.0f}%).",
@@ -274,6 +279,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
     elif deviation is not None and deviation >= warning and not problems:
         problems.append({
             "title": "General imbalance or looseness",
+            "component": "Mounting / impeller",
             "severity": "high" if deviation >= 2 * warning else "medium",
             "evidence": f"Overall vibration {deviation:+.0f}% compared with the healthy pump.",
             "check": "Check the mounting bolts, the impeller balance and the motor fan.",
@@ -282,6 +288,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
     if model_share >= 50 and not problems:
         problems.append({
             "title": "Unusual vibration pattern",
+            "component": "Bearing / impeller",
             "severity": "medium",
             "evidence": f"The anomaly model (trained on the healthy pump) found {model_share:.0f}% "
                         "of the vibration windows unusual.",
@@ -292,6 +299,7 @@ def possible_problems(axes, deviation, anomaly_share, model_share, temperature_m
     if temperature_max is not None and healthy_max is not None and temperature_max > healthy_max + 5:
         problems.append({
             "title": "Overheating",
+            "component": "Motor / bearing",
             "severity": "high" if temperature_max > healthy_max + 15 else "medium",
             "evidence": f"Up to {temperature_max:.1f} C while running vs at most "
                         f"{healthy_max:.1f} C on the healthy pump.",

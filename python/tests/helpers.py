@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from pump_monitor import config, create_app, firebase_store, predictive_maintenance
+from pump_monitor import config, create_app, firebase_store, predictive_maintenance, test_session
 
 # Every file or folder the backend writes while it runs.
 WRITTEN_FILE_SETTINGS = (
@@ -45,6 +45,8 @@ class BackendTestCase(unittest.TestCase):
         # Tests use their own healthy data; the hand-set healthy X/Y values are
         # tested on their own (test_healthy_training).
         self.stack.enter_context(patch.object(config, "HEALTHY_AXIS_RMS_G", {}))
+        # No last saved test carried over from another test.
+        self.stack.enter_context(patch.dict(test_session._last_saved, clear=True))
         self.stack.enter_context(
             patch.dict(predictive_maintenance.maintenance_log_last_at, clear=True)
         )
