@@ -5,16 +5,16 @@
   "clipped_samples_replaced": 1521,
   "windows": 914,
   "vibration_rms_g": {
-    "median": 0.8524,
-    "mean": 0.8726,
-    "robust_std": 0.1472,
+    "median": 0.7544,
+    "mean": 0.7723,
+    "robust_std": 0.1303,
     "variation_percent": 17.3,
-    "p10": 0.6965,
-    "p90": 1.0644
+    "p10": 0.6165,
+    "p90": 0.9421
   },
   "axis_rms_g": {
-    "x": 0.5,
-    "y": 0.15,
+    "x": 0.3341,
+    "y": 0.077,
     "z": 0.6654
   },
   "iso20816": {
@@ -30,6 +30,5 @@
     "invalid_readings_skipped": 100
   },
   "processing": "running samples only; readings at +/-15.5 g replaced; 128-sample windows, SVD-denoised (rank 2); three-axis RMS (Formula 2); median over windows",
-  "recording": "data\\healthy_reference\\healthy_pump_training_data.csv",
-  "manual_adjustment": "2026-11-19: healthy X and Y set by hand to 0.50 g and 0.15 g (recorded: x 0.3341, y 0.077); three-axis vibration_rms_g scaled by 1.1298 to match (median was 0.7544)."
+  "recording": "data\\healthy_reference\\healthy_pump_training_data.csv"
 }

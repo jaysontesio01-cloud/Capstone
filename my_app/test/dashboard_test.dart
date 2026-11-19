@@ -44,10 +44,11 @@ void main() {
   group('sensors online while the ESP32 sends', () {
     String serverTime(Duration ago) =>
         // Like the deployed backend: UTC without a time zone.
-        DateTime.now().toUtc().subtract(ago).toIso8601String().replaceAll(
-          'Z',
-          '',
-        );
+        DateTime.now()
+            .toUtc()
+            .subtract(ago)
+            .toIso8601String()
+            .replaceAll('Z', '');
 
     // A /api/esp32/status response from a backend without the live view.
     Map<String, dynamic> status(Duration ago) => {
@@ -332,6 +333,29 @@ void main() {
     expect(saved, 21);
   });
 
+  testWidgets('machine health counts up from 0% healthy to 100% faulty', (
+    tester,
+  ) async {
+    // Risk 20 (machine health 80%): the bar shows 20% toward faulty.
+    final result = Assessment.fromJson({
+      'verdict': 'HEALTHY',
+      'health_percent': 80,
+      'risk_score': 20,
+      'windows': 12,
+    });
+    expect(result.faultyPercent, 20);
+    await tester.pumpWidget(phone(MachineHealthCard(assessment: result)));
+    expect(find.text('20%'), findsOneWidget);
+    expect(find.text('80%'), findsNothing);
+    expect(
+      tester
+          .widget<VerticalHealthBar>(find.byType(VerticalHealthBar))
+          .faultyPercent,
+      20,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('machine health: vertical bar left, values right', (
     tester,
   ) async {
@@ -341,7 +365,9 @@ void main() {
     );
     expect(find.text('Machine health'), findsOneWidget);
     expect(find.text('Overall result'), findsNothing);
-    expect(find.text('0%'), findsOneWidget);
+    // Machine health 0% = 100% toward faulty.
+    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('0% healthy · 100% faulty'), findsOneWidget);
     expect(find.byType(VerticalHealthBar), findsOneWidget);
     // Two equal halves: the bar centred on the left, the values on the right.
     final card = tester.getRect(find.byType(MachineHealthCard));

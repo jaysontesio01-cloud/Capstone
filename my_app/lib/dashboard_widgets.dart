@@ -1026,7 +1026,8 @@ class MachineHealthCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final a = assessment;
     final color = levelColor(a.verdict);
-    final health = a.healthPercent;
+    // How far toward faulty: 0% = healthy, 100% = faulty.
+    final faulty = a.faultyPercent;
 
     return SectionCard(
       icon: Icons.health_and_safety_outlined,
@@ -1041,15 +1042,23 @@ class MachineHealthCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      health == null ? '—' : '${health.toStringAsFixed(0)}%',
+                      faulty == null ? '—' : '${faulty.toStringAsFixed(0)}%',
                       style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
-                        color: health == null ? kOff : color,
+                        color: faulty == null ? kOff : color,
+                      ),
+                    ),
+                    const Text(
+                      '0% healthy · 100% faulty',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: kMuted,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    VerticalHealthBar(healthPercent: health),
+                    VerticalHealthBar(faultyPercent: faulty),
                   ],
                 ),
               ),
@@ -1160,14 +1169,15 @@ class _StackedInfo extends StatelessWidget {
 }
 
 /// Machine health as one bar drawn like the vibration bars (same height,
-/// scale, grid lines, rounded bar and value above the fill). Healthy at the
-/// bottom, Faulty at the top: it fills from the bottom by how far the pump is
-/// from healthy (100% - health), green at the bottom to red at the top, so
-/// the top of the fill sits at the health value on the scale.
+/// scale, grid lines, rounded bar and value above the fill). It shows how far
+/// the pump is toward faulty: 0% = Healthy at the bottom, 100% = Faulty at
+/// the top, filled from the bottom to that value (20% = 20% toward faulty),
+/// green at the bottom to red at the top.
 class VerticalHealthBar extends StatelessWidget {
-  const VerticalHealthBar({super.key, required this.healthPercent});
+  const VerticalHealthBar({super.key, required this.faultyPercent});
 
-  final double? healthPercent;
+  /// 0 (healthy) - 100 (faulty); null = no data.
+  final double? faultyPercent;
 
   static const double scaleWidth = 40; // room for "100%"
   static const double columnWidth =
@@ -1198,7 +1208,7 @@ class VerticalHealthBar extends StatelessWidget {
                 height: kBarHeight + 22,
                 child: CustomPaint(
                   painter: _ScalePainter(
-                    labels: ['100%', '80%', '60%', '40%', '20%', '0%'],
+                    labels: ['0%', '20%', '40%', '60%', '80%', '100%'],
                   ),
                 ),
               ),
@@ -1206,7 +1216,7 @@ class VerticalHealthBar extends StatelessWidget {
                 width: columnWidth,
                 height: kBarHeight + 22,
                 child: CustomPaint(
-                  painter: _HealthBarPainter(healthPercent: healthPercent),
+                  painter: _HealthBarPainter(faultyPercent: faultyPercent),
                 ),
               ),
             ],
@@ -1245,10 +1255,10 @@ Color _healthColorAt(double t) {
 }
 
 class _HealthBarPainter extends CustomPainter {
-  _HealthBarPainter({required this.healthPercent});
+  _HealthBarPainter({required this.faultyPercent});
 
-  /// 0-100; null = no data.
-  final double? healthPercent;
+  /// 0 (healthy) - 100 (faulty); null = no data.
+  final double? faultyPercent;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1273,8 +1283,8 @@ class _HealthBarPainter extends CustomPainter {
       Paint()..color = kTrack.withAlpha(200),
     );
 
-    final health = healthPercent;
-    if (health == null) {
+    final faulty = faultyPercent;
+    if (faulty == null) {
       final label = _text(
         'no data',
         const TextStyle(color: kOff, fontSize: 12, fontWeight: FontWeight.w700),
@@ -1289,9 +1299,10 @@ class _HealthBarPainter extends CustomPainter {
       return;
     }
 
-    // Fill from the bottom by 100% - health; the gradient spans the whole
-    // bar, so a higher fill reaches the warning and faulty colours.
-    final level = (1 - health / 100).clamp(0.0, 1.0);
+    // Fill from the bottom (0% = healthy) up to the faulty %; the gradient
+    // spans the whole bar, so a higher fill reaches the warning and faulty
+    // colours.
+    final level = (faulty / 100).clamp(0.0, 1.0);
     final fillHeight = (height * level).clamp(level > 0 ? 3.0 : 0.0, height);
     if (fillHeight > 0) {
       canvas.drawRRect(
@@ -1309,9 +1320,9 @@ class _HealthBarPainter extends CustomPainter {
       );
     }
 
-    // The health value above the fill, in the bar's colour at that level.
+    // The faulty % above the fill, in the bar's colour at that level.
     final label = _text(
-      '${health.toStringAsFixed(0)}%',
+      '${faulty.toStringAsFixed(0)}%',
       TextStyle(
         color: _healthColorAt(level),
         fontSize: 13,
@@ -1327,5 +1338,5 @@ class _HealthBarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HealthBarPainter oldDelegate) =>
-      oldDelegate.healthPercent != healthPercent;
+      oldDelegate.faultyPercent != faultyPercent;
 }

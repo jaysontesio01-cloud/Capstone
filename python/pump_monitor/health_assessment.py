@@ -75,19 +75,35 @@ def axis_limit(axis):
     return float(limits["rms"])
 
 
+def _three_axis(values):
+    return math.sqrt(sum(value * value for value in values.values()))
+
+
 def healthy_reference_summary():
+    """The healthy pump every pump is compared with: the recorded summary,
+    with the per-axis values set by hand (config.HEALTHY_AXIS_RMS_G) in place
+    of the recorded ones and the three-axis total moved with them."""
     reference = healthy_reference() or {}
     vibration = reference.get("vibration_rms_g") or {}
     temperature = reference.get("temperature_c") or {}
+    recorded_axes = reference.get("axis_rms_g") or {}
+    axes = {**recorded_axes, **config.HEALTHY_AXIS_RMS_G} if recorded_axes else {}
+    recorded_total = _three_axis(recorded_axes) if recorded_axes else 0.0
+    total_factor = _three_axis(axes) / recorded_total if recorded_total > 0 else 1.0
+
+    def total(key):
+        value = vibration.get(key)
+        return round(value * total_factor, 4) if value is not None else None
+
     return {
         "available": bool(reference),
         "source": config.HEALTHY_REFERENCE_FILE.name,
         "recorded_from": reference.get("from"),
         "recorded_to": reference.get("to"),
-        "total_rms_g": vibration.get("median"),
-        "total_rms_p10_g": vibration.get("p10"),
-        "total_rms_p90_g": vibration.get("p90"),
-        "axis_rms_g": reference.get("axis_rms_g") or {},
+        "total_rms_g": total("median"),
+        "total_rms_p10_g": total("p10"),
+        "total_rms_p90_g": total("p90"),
+        "axis_rms_g": axes,
         "axis_limit_g": {axis: round(axis_limit(axis), 4) for axis in AXES},
         "temperature_mean_c": temperature.get("mean"),
         "temperature_max_c": temperature.get("max"),

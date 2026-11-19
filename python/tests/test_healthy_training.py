@@ -77,6 +77,29 @@ class HealthyTrainingTests(BackendTestCase):
         self.assertGreaterEqual(np.mean(healthy == 1), 0.9)
         self.assertGreaterEqual(np.mean(stronger == -1), 0.9)
 
+    def test_training_uses_the_healthy_axes_set_by_hand(self):
+        recorded = anomaly_model.healthy_training_windows()
+        with patch.object(config, "HEALTHY_AXIS_RMS_G", {"x": 0.2, "y": 0.15}):
+            trained_model, trained_scaler = anomaly_model.train_bearing_anomaly_model()
+            windows = anomaly_model.healthy_training_windows()
+
+        def median_rms(data, axis_idx):
+            signal = data[:, :, axis_idx]
+            centered = signal - signal.mean(axis=1, keepdims=True)
+            return float(np.median(np.sqrt(np.mean(centered ** 2, axis=1))))
+
+        # X and Y were scaled to the set values; Z was left as recorded.
+        self.assertAlmostEqual(median_rms(windows, 0), 0.2, places=6)
+        self.assertAlmostEqual(median_rms(windows, 1), 0.15, places=6)
+        self.assertLess(median_rms(recorded, 0), 0.1)  # was ~0.085 g
+        np.testing.assert_array_equal(windows[:, :, 2], recorded[:, :, 2])
+        # The limits sit above the set values, and the model calls them normal.
+        limits = json.loads(config.PUMP_PART_THRESHOLDS_FILE.read_text(encoding="utf-8"))["thresholds_g"]
+        self.assertTrue(0.2 < limits["X-axis"]["rms"] < 0.3)
+        self.assertTrue(0.15 < limits["Y-axis"]["rms"] < 0.25)
+        healthy = trained_model.predict(trained_scaler.transform(extract_features(windows)))
+        self.assertGreaterEqual(np.mean(healthy == 1), 0.9)
+
     def test_pump_parts_are_judged_against_the_healthy_limits(self):
         limits = {
             "X-axis": {"rms": 0.2, "peak": 1.0},

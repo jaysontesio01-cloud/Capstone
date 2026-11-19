@@ -57,7 +57,25 @@ def healthy_training_windows():
     windows = create_windows(data, window_size=config.WINDOW_SIZE, step=64)
     if len(windows) == 0:
         raise ValueError("Not enough healthy pump rows to train the anomaly model")
-    return np.array([prepare_window(window) for window in windows])
+    return scale_to_healthy_axes(np.array([prepare_window(window) for window in windows]))
+
+
+def scale_to_healthy_axes(windows):
+    """Scale the vibration (around each window's mean, so gravity stays) of
+    every axis in config.HEALTHY_AXIS_RMS_G until the windows' median RMS
+    equals the value set there: the model and the part limits then learn the
+    healthy pump with those per-axis levels."""
+    windows = np.array(windows, dtype=float, copy=True)
+    for axis_idx, axis in enumerate("xyz"):
+        target = config.HEALTHY_AXIS_RMS_G.get(axis)
+        if not target:
+            continue
+        signal = windows[:, :, axis_idx]
+        mean = signal.mean(axis=1, keepdims=True)
+        median_rms = float(np.median(np.sqrt(np.mean((signal - mean) ** 2, axis=1))))
+        if median_rms > 0:
+            windows[:, :, axis_idx] = mean + (signal - mean) * (target / median_rms)
+    return windows
 
 
 def part_thresholds_from_windows(windows):
@@ -86,6 +104,8 @@ def save_part_thresholds(thresholds, window_count):
         "rule": (f"healthy median + {config.HEALTHY_LIMIT_SIGMAS:g} robust standard deviations "
                  "(1.4826 x median absolute deviation) over SVD-denoised 128-sample windows"),
         "created_at": datetime.now().isoformat(),
+        # Axes whose training data was scaled to the healthy values set by hand.
+        "healthy_axis_rms_g": dict(config.HEALTHY_AXIS_RMS_G),
         "thresholds_g": thresholds,
     }
     config.PUMP_PART_THRESHOLDS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -164,6 +164,14 @@ VIBRATION_DEVIATION_WARNING_PERCENT = float(
 # Summary of the healthy pump (per-axis RMS, temperature) that every pump is
 # compared with; written by scripts/analyze_recording.py --save.
 HEALTHY_REFERENCE_FILE = HEALTHY_REFERENCE_DIR / "ESP32-002_healthy_reference.json"
+# Healthy per-axis vibration (RMS around the mean, g) that the whole system
+# uses, set by hand from the healthy pump's run on 19 Nov 2026 (X 0.47 g,
+# Y 0.16 g; its 17 Nov recording gave X 0.334 g, Y 0.077 g). They replace the
+# recorded values in the healthy reference (bars, statuses, possible problems;
+# the three-axis total moves with them), and the healthy training data's X
+# and Y are scaled to them, so the anomaly model and the pump part limits
+# learn the same healthy pump. Z keeps the recorded value.
+HEALTHY_AXIS_RMS_G = {"x": 0.50, "y": 0.15}
 # Raw samples kept per device for the live view: the live result is judged
 # over the last ~60 s of running data (6144 samples at 100 Hz). Over 20 s the
 # healthy pump's own stretches of stronger vibration read as warnings.

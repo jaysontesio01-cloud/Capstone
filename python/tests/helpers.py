@@ -42,6 +42,9 @@ class BackendTestCase(unittest.TestCase):
                 patch.object(config, name, self.data_dir / getattr(config, name).name)
             )
         self.stack.enter_context(patch.object(firebase_store, "init_firebase", return_value=None))
+        # Tests use their own healthy data; the hand-set healthy X/Y values are
+        # tested on their own (test_healthy_training).
+        self.stack.enter_context(patch.object(config, "HEALTHY_AXIS_RMS_G", {}))
         self.stack.enter_context(
             patch.dict(predictive_maintenance.maintenance_log_last_at, clear=True)
         )

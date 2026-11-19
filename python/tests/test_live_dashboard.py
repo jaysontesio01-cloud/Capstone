@@ -67,6 +67,19 @@ class DashboardTestCase(BackendTestCase):
 
 
 class AssessmentTests(DashboardTestCase):
+    def test_healthy_axes_set_by_hand_replace_the_recorded_ones(self):
+        with patch.object(config, "HEALTHY_AXIS_RMS_G", {"x": 0.50, "y": 0.15}):
+            reference = health_assessment.healthy_reference_summary()
+            # A pump near the set values (z as recorded) is judged against them.
+            result = self.assess_samples(pump_samples(10, x=0.45, y=0.135, z=0.66))
+        self.assertEqual(reference["axis_rms_g"], {"x": 0.50, "y": 0.15, "z": 0.66})
+        # The three-axis total moved with the axes: 0.75 x |(.5,.15,.66)| / |(.33,.08,.66)|.
+        self.assertAlmostEqual(reference["total_rms_g"], 0.75 * 0.8415 / 0.7422, delta=0.005)
+        self.assertEqual([a["healthy_rms_g"] for a in result["axes"]], [0.50, 0.15, 0.66])
+        self.assertAlmostEqual(result["axes"][0]["times_healthy"], 0.9, delta=0.05)
+        self.assertAlmostEqual(result["axes"][1]["times_healthy"], 0.9, delta=0.05)
+        self.assertEqual(result["verdict"], "HEALTHY")
+
     def test_vibration_like_the_healthy_pump_is_healthy(self):
         result = self.assess_samples(pump_samples(10))
         self.assertEqual(result["verdict"], "HEALTHY")

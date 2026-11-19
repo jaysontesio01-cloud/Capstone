@@ -148,6 +148,11 @@ class Assessment {
 
   bool get hasData => verdict != 'NO_DATA';
 
+  /// How far the pump is toward faulty: 0% = healthy, 100% = faulty
+  /// (100 - machine health, the same as the risk score).
+  double? get faultyPercent =>
+      healthPercent == null ? null : (100 - healthPercent!).clamp(0.0, 100.0);
+
   /// No running data: the result is "No data", the healthy values still show.
   factory Assessment.empty() => Assessment(
     windows: 0,
@@ -262,7 +267,7 @@ const List<AxisLevel> kDefaultAxes = [
     pumpPart: 'Lateral Bearing/Shaft Alignment',
     rmsG: null,
     healthyRmsG: 0.50,
-    healthyLimitG: 0.7444,
+    healthyLimitG: 0.7424,
     timesHealthy: null,
     status: 'off',
   ),
@@ -271,7 +276,7 @@ const List<AxisLevel> kDefaultAxes = [
     pumpPart: 'Radial Bearing/Motor Housing',
     rmsG: null,
     healthyRmsG: 0.15,
-    healthyLimitG: 0.3043,
+    healthyLimitG: 0.3053,
     timesHealthy: null,
     status: 'off',
   ),
@@ -290,7 +295,7 @@ const kDefaultHealthyReference = HealthyReference(
   available: true,
   totalRmsG: 0.8524,
   axisRmsG: {'x': 0.50, 'y': 0.15, 'z': 0.6654},
-  axisLimitG: {'x': 0.7444, 'y': 0.3043, 'z': 1.0246},
+  axisLimitG: {'x': 0.7424, 'y': 0.3053, 'z': 1.0246},
   temperatureMeanC: 55.37,
   temperatureMaxC: 65.25,
   recordedFrom: null,

@@ -587,9 +587,9 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Shows the test the server answered with at once (countdown included);
@@ -747,15 +747,16 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _showVerdictAlert(Assessment assessment) {
-    final health = assessment.healthPercent == null
+    final faulty = assessment.faultyPercent == null
         ? ''
-        : '\nMachine health: ${assessment.healthPercent!.toStringAsFixed(0)}%';
+        : '\nToward faulty: ${assessment.faultyPercent!.toStringAsFixed(0)}% '
+              '(0% = healthy, 100% = faulty)';
     _showMessageDialog(
       icon: verdictIcon(assessment.verdict),
       color: levelColor(assessment.verdict),
       title: 'Pump check: ${assessment.verdict}',
       message:
-          '${assessment.verdictText}.$health'
+          '${assessment.verdictText}.$faulty'
           '${_problemLines(assessment)}\n\n'
           'Compared with the healthy pump.',
     );
@@ -765,8 +766,8 @@ class _MyHomePageState extends State<MyHomePage> {
     final assessment = test.assessment;
     final result = assessment == null || !assessment.hasData
         ? 'No running data was collected.'
-        : 'Result: ${assessment.verdict} (machine health '
-              '${assessment.healthPercent?.toStringAsFixed(0) ?? '—'}%).'
+        : 'Result: ${assessment.verdict} '
+              '(${assessment.faultyPercent?.toStringAsFixed(0) ?? '—'}% toward faulty).'
               '${_problemLines(assessment)}';
     _showMessageDialog(
       icon: Icons.timer_off_outlined,
