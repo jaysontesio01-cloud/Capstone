@@ -78,7 +78,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   // Live dashboard (GET /api/esp32/live/<id>), compared with the healthy pump.
   LiveData? _live;
-  int _liveFailures = 0; // consecutive failed live updates
   DateTime? _liveFetchedAt;
   bool _liveRequestActive = false;
   bool _liveRefreshQueued = false;
@@ -276,7 +275,6 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _selectedDeviceId = deviceId;
       _live = null;
-      _liveFailures = 0;
       _latestMaintenance = null;
       _lastVerdictAlertKey = null;
     });
@@ -494,7 +492,6 @@ class _MyHomePageState extends State<MyHomePage> {
           : null;
       setState(() {
         _live = live;
-        _liveFailures = 0;
         _liveFetchedAt = DateTime.now();
       });
       _checkAlerts(live, previousTest);
@@ -535,11 +532,16 @@ class _MyHomePageState extends State<MyHomePage> {
     return null;
   }
 
-  /// After a few failed updates in a row (server or ESP32 not reachable),
-  /// show "no data" instead of old values that look live.
+  /// A failed or slow update keeps the last data on screen; only when nothing
+  /// arrived for longer than the online window (server or ESP32 really not
+  /// reachable) show "no data" instead of old values that look live. A few
+  /// slow answers in a row no longer make the pump flicker offline.
   void _liveUpdateFailed() {
-    _liveFailures++;
-    if (_liveFailures >= 3 && _live != null) {
+    final fetchedAt = _liveFetchedAt;
+    final stale =
+        fetchedAt == null ||
+        DateTime.now().difference(fetchedAt) > kOnlineWindow;
+    if (stale && _live != null) {
       setState(() => _live = null);
     }
   }

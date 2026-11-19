@@ -190,7 +190,10 @@ def score_windows(windows):
     if model is None or scaler is None:
         load_model()
     features_scaled = scaler.transform(extract_features(windows))
-    return model.predict(features_scaled), model.decision_function(features_scaled)
+    # One pass over the trees: IsolationForest.predict is -1 where the
+    # decision function is below 0 (scikit-learn computes it the same way).
+    scores = model.decision_function(features_scaled)
+    return np.where(scores < 0, -1, 1), scores
 
 
 def analyze_pump_parts(window_data):

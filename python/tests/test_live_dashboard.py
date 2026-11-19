@@ -2,6 +2,8 @@
 healthy pump, possible problems, and timed tests."""
 
 import json
+import threading
+import time
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -12,6 +14,7 @@ from pump_monitor import (
     anomaly_model,
     config,
     device_registry,
+    firebase_store,
     health_assessment,
     test_session,
     window_analysis,
@@ -193,6 +196,72 @@ class LiveEndpointTests(DashboardTestCase):
     def device_in_list(self):
         devices = self.client.get("/api/esp32/devices").get_json()["devices"]
         return next(d for d in devices if d["device_id"] == self.DEVICE_ID)
+
+    def live(self):
+        return self.client.get(f"/api/esp32/live/{self.DEVICE_ID}").get_json()
+
+    def test_live_view_judges_each_window_once_with_the_same_result(self):
+        samples = pump_samples(1, running=False) + pump_samples(70, y=0.3) + pump_samples(3)
+        judged = []
+        original = health_assessment._window_summaries
+        with patch.object(health_assessment, "_window_summaries",
+                          side_effect=lambda w: judged.append(len(w)) or original(w)):
+            for start in range(0, len(samples), 100):  # one upload a second, app polling
+                self.send(samples[start:start + 100])
+                incremental = self.live()["live_assessment"]
+        # Every running window was judged once, not all of them on every poll.
+        self.assertLessEqual(sum(judged), len(samples) // 128 + 1)
+        # A fresh analysis of the same buffer gives the same result.
+        health_assessment._live_windows.clear()
+        health_assessment._live_cache.clear()
+        fresh = self.live()["live_assessment"]
+        self.assertAlmostEqual(incremental["windows"], fresh["windows"], delta=1)
+        self.assertEqual(incremental["verdict"], fresh["verdict"])
+        self.assertAlmostEqual(incremental["risk_score"], fresh["risk_score"], delta=2)
+
+    def test_live_view_forgets_windows_older_than_its_buffer(self):
+        self.send(pump_samples(20))
+        self.assertTrue(self.live()["live_assessment"]["windows"] > 0)
+        # The pump was off for longer than the live buffer (~61 s).
+        self.send(pump_samples(62, running=False))
+        self.assertEqual(self.live()["live_assessment"]["verdict"], "NO_DATA")
+
+    def test_upload_analysis_runs_at_most_every_few_seconds(self):
+        samples = pump_samples(3)
+        post = lambda part: self.client.post("/api/esp32/data", json={
+            "device_id": self.DEVICE_ID, "samples": part}).get_json()
+        post(samples[:100])  # fewer than one window yet
+        self.assertIsNotNone(post(samples[100:200])["analysis"])
+        self.assertIsNone(post(samples[200:300])["analysis"])  # within the interval
+        with device_registry.buffer_lock:
+            device_registry.esp32_data_buffer[self.DEVICE_ID]["last_analysis_at"] -= \
+                config.UPLOAD_ANALYSIS_INTERVAL_SECONDS
+        self.assertIsNotNone(post(samples[100:200])["analysis"])
+
+    def test_uploads_do_not_wait_for_firebase(self):
+        written = threading.Event()
+
+        def slow_write(*args):
+            time.sleep(1.0)  # Firebase's network round trips
+            written.set()
+
+        with patch.object(firebase_store, "init_firebase", return_value=object()),                 patch.object(firebase_store, "store_sensor_batch_in_firebase", side_effect=slow_write):
+            started = time.perf_counter()
+            response = self.client.post("/api/esp32/data", json={
+                "device_id": self.DEVICE_ID, "samples": pump_samples(1)})
+            self.assertLess(time.perf_counter() - started, 0.8)
+            self.assertTrue(response.get_json()["firebase_saved"])
+            self.assertTrue(written.wait(5))  # still written, in the background
+
+    def test_a_short_gap_in_the_data_does_not_make_the_pump_offline(self):
+        self.send(pump_samples(1, running=False))
+        # One slow upload: no data for 20 s (the ESP32 waits up to 15 s, retries after 2 s).
+        old = datetime.now().astimezone() - timedelta(seconds=20)
+        with device_registry.buffer_lock:
+            device_registry.esp32_data_buffer[self.DEVICE_ID]["last_update"] = old.isoformat()
+        health_assessment._live_cache.pop(self.DEVICE_ID, None)
+        self.assertTrue(self.device_in_list()["online"])
+        self.assertTrue(self.live()["online"])
 
     def test_device_list_shows_each_pump_online_while_its_esp32_sends(self):
         self.send(pump_samples(1, running=False))

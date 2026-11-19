@@ -1,6 +1,7 @@
 """Live sensor data from the ESP32: receive samples, buffer status, history,
 on-demand analysis and clearing the buffer."""
 
+import time
 from datetime import datetime
 
 import numpy as np
@@ -16,7 +17,7 @@ from ..device_registry import (
     is_esp32_device_id,
 )
 from ..iso20816 import compare_to_standard_vibration
-from ..health_assessment import live_risk
+from ..health_assessment import live_risk, sample_is_running
 from ..predictive_maintenance import (
     build_predictive_maintenance_summary,
     compute_predictive_risk,
@@ -112,6 +113,7 @@ def esp32_receive_data():
             if len(device_buffer['raw_data']) > config.WINDOW_SIZE:
                 del device_buffer['raw_data'][:-config.WINDOW_SIZE]
             device_buffer['live_raw'].extend(raw_samples)
+            device_buffer['live_total'] = device_buffer.get('live_total', 0) + len(raw_samples)
             if len(device_buffer['live_raw']) > config.LIVE_RAW_SAMPLES:
                 del device_buffer['live_raw'][:-config.LIVE_RAW_SAMPLES]
 
@@ -148,89 +150,104 @@ def esp32_receive_data():
             # the server's clock is not UTC (e.g. the backend on a laptop).
             device_buffer['last_update'] = datetime.now().astimezone().isoformat()
 
-            buffer_size = len(esp32_data_buffer[device_id]['data'])
+            buffer_size = len(device_buffer['data'])
             samples_remaining = config.WINDOW_SIZE - buffer_size
-            latest_values = latest_sample_values(esp32_data_buffer[device_id]['data'])
+            latest_values = latest_sample_values(device_buffer['data'])
+
+            # The analysis of the latest window (anomaly model, forecast, ISO
+            # comparison) runs every UPLOAD_ANALYSIS_INTERVAL_SECONDS, not on
+            # every upload, and outside the lock on a copy: it is slow, and
+            # every other request (the other ESP32, the app) waits for the lock.
+            # On a small server that made the pumps flicker offline.
+            analysis_now = time.monotonic()
+            analyze = (
+                buffer_size >= config.WINDOW_SIZE and
+                analysis_now - device_buffer.get('last_analysis_at', float('-inf'))
+                >= config.UPLOAD_ANALYSIS_INTERVAL_SECONDS
+            )
+            window_samples = []
+            if analyze:
+                device_buffer['last_analysis_at'] = analysis_now
+                window_samples = list(device_buffer['data'][-config.WINDOW_SIZE:])
+
+        auto_analyze = False
+        analysis_result = None
+        latest_window_df = None
+
+        if analyze:
+
+            try:
+                df = pd.DataFrame(window_samples)
+                df = df[['x', 'y', 'z']]
+                latest_window_df = df.copy()
+
+                windows = create_windows(df, window_size=config.WINDOW_SIZE, step=config.WINDOW_SIZE)
+                preds, scores = score_windows(windows)
 
 
-            auto_analyze = False
-            analysis_result = None
-            latest_window_df = None
+                latest_window = windows[-1] if len(windows) > 0 else None
+                if latest_window is not None:
+                    anomalous_parts, axis_metrics = analyze_pump_parts(latest_window)
+                    standard_comparison = compare_to_standard_vibration(df)
+                    is_idle = (
+                        any(m.get('is_idle') for m in axis_metrics) or
+                        sample_pump_is_idle(window_samples[-1])
+                    )
+                    if is_idle:
+                        anomalous_parts = []
+                        for m in axis_metrics:
+                            m['is_idle'] = True
+                            m['is_anomaly'] = False
+                    # The healthy-pump model and part limits decide (plus the
+                    # baseline deviation below); ISO 20816 is information only.
+                    is_anomaly = False if is_idle else (
+                        preds[-1] == -1 or
+                        any(m['is_anomaly'] for m in axis_metrics)
+                    )
 
-            if buffer_size >= config.WINDOW_SIZE:
+                    risk_score, _ = compute_predictive_risk(latest_window_df, {
+                        "anomaly_score": float(scores[-1])
+                    }, device_id=device_id)
+                    observed_at = datetime.now()
+                    # This window's forecast for the response; the trend is
+                    # recorded below with the app's 60 s risk.
+                    prediction = predict_failure_for_device(
+                        device_id, risk_score, observed_at, record=False,
+                    )
 
-                try:
-                    df = pd.DataFrame(esp32_data_buffer[device_id]['data'][-config.WINDOW_SIZE:])
-                    df = df[['x', 'y', 'z']]
-                    latest_window_df = df.copy()
-
-                    windows = create_windows(df, window_size=config.WINDOW_SIZE, step=config.WINDOW_SIZE)
-                    preds, scores = score_windows(windows)
-
-
-                    latest_window = windows[-1] if len(windows) > 0 else None
-                    if latest_window is not None:
-                        anomalous_parts, axis_metrics = analyze_pump_parts(latest_window)
-                        standard_comparison = compare_to_standard_vibration(df)
-                        is_idle = (
-                            any(m.get('is_idle') for m in axis_metrics) or
-                            sample_pump_is_idle(esp32_data_buffer[device_id]['data'][-1])
-                        )
-                        if is_idle:
-                            anomalous_parts = []
-                            for m in axis_metrics:
-                                m['is_idle'] = True
-                                m['is_anomaly'] = False
-                        # The healthy-pump model and part limits decide (plus the
-                        # baseline deviation below); ISO 20816 is information only.
-                        is_anomaly = False if is_idle else (
-                            preds[-1] == -1 or
-                            any(m['is_anomaly'] for m in axis_metrics)
-                        )
-
-                        risk_score, _ = compute_predictive_risk(latest_window_df, {
-                            "anomaly_score": float(scores[-1])
-                        }, device_id=device_id)
-                        observed_at = datetime.now()
-                        # This window's forecast for the response; the trend is
-                        # recorded below with the app's 60 s risk.
-                        prediction = predict_failure_for_device(
-                            device_id, risk_score, observed_at, record=False,
-                        )
-
-                        analysis_result = {
-                            "is_anomaly": bool(is_anomaly),
-                            "is_idle": bool(is_idle),
-                            "anomaly_score": float(scores[-1]),
-                            "risk_score": risk_score,
-                            "standard_vibration_comparison": standard_comparison,
-                            "affected_parts": list(anomalous_parts),
-                            "axis_metrics": [
-                                {
-                                    "axis": m['axis'],
-                                    "pump_part": m['pump_part'],
-                                    "rms": round(m['rms'], 4),
-                                    "std": round(m['std'], 4),
-                                    "max": round(m['max'], 4),
-                                    "is_idle": bool(m.get('is_idle', False)),
-                                    "is_anomaly": bool(m['is_anomaly'])
-                                }
-                                for m in axis_metrics
-                            ]
-                        }
-                        analysis_result["predictive_maintenance"] = prediction
-                        analysis_result["maintenance_summary"] = build_predictive_maintenance_summary(
-                            device_id,
-                            risk_score,
-                            (analysis_result.get("standard_vibration_comparison") or {}).get("zone", "A"),
-                            observed_at,
-                            runtime_hours=0.0,
-                            record=False,
-                            prediction=prediction,
-                        )
-                        auto_analyze = True
-                except Exception as analyze_error:
-                    print(f"ESP32 auto-analysis failed: {analyze_error}")
+                    analysis_result = {
+                        "is_anomaly": bool(is_anomaly),
+                        "is_idle": bool(is_idle),
+                        "anomaly_score": float(scores[-1]),
+                        "risk_score": risk_score,
+                        "standard_vibration_comparison": standard_comparison,
+                        "affected_parts": list(anomalous_parts),
+                        "axis_metrics": [
+                            {
+                                "axis": m['axis'],
+                                "pump_part": m['pump_part'],
+                                "rms": round(m['rms'], 4),
+                                "std": round(m['std'], 4),
+                                "max": round(m['max'], 4),
+                                "is_idle": bool(m.get('is_idle', False)),
+                                "is_anomaly": bool(m['is_anomaly'])
+                            }
+                            for m in axis_metrics
+                        ]
+                    }
+                    analysis_result["predictive_maintenance"] = prediction
+                    analysis_result["maintenance_summary"] = build_predictive_maintenance_summary(
+                        device_id,
+                        risk_score,
+                        (analysis_result.get("standard_vibration_comparison") or {}).get("zone", "A"),
+                        observed_at,
+                        runtime_hours=0.0,
+                        record=False,
+                        prediction=prediction,
+                    )
+                    auto_analyze = True
+            except Exception as analyze_error:
+                print(f"ESP32 auto-analysis failed: {analyze_error}")
 
         online_learning_result = None
         if auto_analyze and analysis_result and latest_window_df is not None:
@@ -278,8 +295,9 @@ def esp32_receive_data():
 
         # The risk trend (failure forecast, maintenance history) records the risk
         # the app shows: the last ~60 s of running data, every few minutes. Not
-        # the risk of one 1.3 s window, which jumps around.
-        if auto_analyze and analysis_result and not analysis_result["is_idle"]:
+        # the risk of one 1.3 s window, which jumps around. Checked on every
+        # upload while the pump runs (not only when the window is analysed).
+        if buffer_size >= config.WINDOW_SIZE and raw_samples and sample_is_running(raw_samples[-1]):
             try:
                 observed_at = datetime.now()
                 if history_point_due(device_id, observed_at):
@@ -305,14 +323,15 @@ def esp32_receive_data():
         except Exception as test_error:
             print(f"Timed test update failed: {test_error}")
 
-        firebase_batch_id = firebase_store.store_sensor_batch_in_firebase(device_id, samples, analysis_result)
+        # Saved to Firebase in the background: the ESP32 must not wait for it.
+        firebase_queued = firebase_store.queue_sensor_batch_for_firebase(device_id, samples, analysis_result)
 
         return jsonify({
             "status": "success",
             "message": f"Received {len(samples)} samples",
             "device_id": device_id,
-            "firebase_saved": firebase_batch_id is not None,
-            "firebase_batch_id": firebase_batch_id,
+            "firebase_saved": firebase_queued,
+            "firebase_batch_id": None,  # assigned when the background write runs
             "buffer_status": {
                 "total_samples": buffer_size,
                 "samples_remaining": max(0, samples_remaining),

@@ -16,9 +16,11 @@ List<Map<String, dynamic>> _list(dynamic value) => value is List
           .toList()
     : const [];
 
-/// When the app works out "online" itself (older backend): the backend's 15 s
-/// plus the 5 s between updates of the device list.
-const Duration kOnlineWindow = Duration(seconds: 20);
+/// How long a pump counts as online after its last data when the app works
+/// it out itself, and how long the app keeps showing its last live data while
+/// the server is slow to answer: the backend's 35 s plus the 5 s between
+/// updates of the device list.
+const Duration kOnlineWindow = Duration(seconds: 40);
 
 /// Age of a backend time (ISO 8601); without a time zone it is UTC, as on Render.
 Duration? ageOfServerTime(String? value) {

@@ -7,14 +7,19 @@ it is available.
 
 from collections import defaultdict
 from datetime import datetime
+from itertools import count
 from threading import Lock
 
 from . import config, firebase_store
+
+_buffer_ids = count(1)
 
 esp32_data_buffer = defaultdict(lambda: {
     'data': [],
     'raw_data': [],
     'live_raw': [],  # raw samples (clipped readings replaced) for the app's live view
+    'live_total': 0,  # samples added to live_raw so far
+    'buffer_id': next(_buffer_ids),  # new when the device's buffer is created again
     'last_update': None,
     'device_name': None,
     'location': None

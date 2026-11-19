@@ -54,7 +54,7 @@ This backend supports:
 **Endpoint:** `GET /api/esp32/devices`
 
 **Purpose:** Every registered pump and whether its ESP32 is online (sent data
-in the last `LIVE_ONLINE_SECONDS` = 15 s, e.g. while connected to the phone's
+in the last `LIVE_ONLINE_SECONDS` = 35 s, e.g. while connected to the phone's
 hotspot). The app shows this as Online/Offline in "Pump sensors".
 
 **Response:**
@@ -303,7 +303,7 @@ the whole test), the raw samples are recorded to `data/recordings/`, and when th
 time is up the summary is saved to `data/app_tests/`. `state`: `none`,
 `running`, `finished` or `stopped`.
 
-A test only starts while the pump's ESP32 is connected (data in the last 15 s);
+A test only starts while the pump's ESP32 is connected (data in the last 35 s);
 otherwise `start` answers **409** with `"error": "esp32_offline"`.
 
 ---

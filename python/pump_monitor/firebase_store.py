@@ -6,6 +6,8 @@ available, so the backend also runs without it (set FIREBASE_ENABLED=0).
 
 import json
 import os
+import queue
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -147,6 +149,53 @@ def store_device_in_firebase(device_id, device_name, location):
     except Exception as exc:
         print(f"Firebase device write failed: {exc}")
         return False
+
+
+# Sensor batches waiting to be written to Firebase by the background writer.
+_batch_queue = queue.Queue(maxsize=config.FIREBASE_BATCH_QUEUE_SIZE)
+_batch_writer = None
+_batch_writer_lock = threading.Lock()
+
+
+def _write_batches():
+    while True:
+        device_id, samples, analysis_result = _batch_queue.get()
+        try:
+            store_sensor_batch_in_firebase(device_id, samples, analysis_result)
+        finally:
+            _batch_queue.task_done()
+
+
+def queue_sensor_batch_for_firebase(device_id, samples, analysis_result=None):
+    """Write the batch to Firebase in the background and return at once:
+    the ESP32's upload must not wait for Firebase's network round trips (three
+    per batch), or its data arrives late and the pump looks offline. When
+    Firebase falls far behind, the oldest waiting batch is skipped. Returns
+    whether the batch was queued."""
+    global _batch_writer
+    if init_firebase() is None:
+        return False
+    with _batch_writer_lock:
+        if _batch_writer is None or not _batch_writer.is_alive():
+            _batch_writer = threading.Thread(
+                target=_write_batches, name="firebase-batches", daemon=True
+            )
+            _batch_writer.start()
+    item = (device_id, list(samples), analysis_result)
+    try:
+        _batch_queue.put_nowait(item)
+    except queue.Full:
+        try:
+            _batch_queue.get_nowait()  # skip the oldest
+            _batch_queue.task_done()
+            print("Firebase is behind: skipped the oldest sensor batch")
+        except queue.Empty:
+            pass
+        try:
+            _batch_queue.put_nowait(item)
+        except queue.Full:
+            return False
+    return True
 
 
 def store_sensor_batch_in_firebase(device_id, samples, analysis_result=None):

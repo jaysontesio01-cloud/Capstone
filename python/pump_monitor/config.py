@@ -178,8 +178,17 @@ HEALTHY_AXIS_RMS_G = {"x": 0.50, "y": 0.15}
 LIVE_RAW_SAMPLES = 6144
 # The live per-axis bars use the latest windows (4 x 128 samples = about 5 s).
 LIVE_BAR_WINDOWS = 4
-# Device counts as online when its last data is at most this old.
-LIVE_ONLINE_SECONDS = 15
+# Device counts as online when its last data is at most this old. The ESP32
+# sends every second, but one slow request (it waits up to 15 s, then retries
+# 2 s later) must not make the pump look offline, so allow two of those.
+LIVE_ONLINE_SECONDS = 35
+# The analysis of each device's latest window on upload (anomaly model,
+# forecast, ISO comparison, online learning) at most this often; the live view
+# and timed tests judge every window themselves.
+UPLOAD_ANALYSIS_INTERVAL_SECONDS = 5
+# Sensor batches waiting for the background Firebase writer (about one per
+# upload per device); when it falls further behind, the oldest are skipped.
+FIREBASE_BATCH_QUEUE_SIZE = 300
 # Per-axis level: up to the healthy limit = Healthy, up to this many times the
 # limit = Warning, above = Faulty (limits: models/pump_part_thresholds.json).
 AXIS_FAULTY_LIMIT_FACTOR = 2.0

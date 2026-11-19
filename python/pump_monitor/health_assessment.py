@@ -20,6 +20,7 @@ The live result covers the last ~60 s of running data (config.LIVE_RAW_SAMPLES).
 
 import json
 import math
+from threading import Lock
 
 import numpy as np
 
@@ -146,9 +147,8 @@ def running_windows(samples, pending=None):
     return windows, rows
 
 
-def summarize_windows(windows):
-    """Run the healthy-pump checks on (x, y, z, temperature) windows; return
-    one compact result per running (not idle) window."""
+def _window_summaries(windows):
+    """summarize_windows, one entry per window: None for an idle window."""
     if not windows:
         return []
     values = np.asarray(windows, dtype=float)
@@ -156,6 +156,7 @@ def summarize_windows(windows):
     summaries = []
     for window, result in zip(values, results):
         if result["is_idle"]:
+            summaries.append(None)
             continue
         axis_rms = {m["axis"][0].lower(): float(m["rms"]) for m in result["axis_metrics"]}
         temperatures = window[:, 3][np.isfinite(window[:, 3])]
@@ -169,6 +170,12 @@ def summarize_windows(windows):
             "temperature_c": float(np.median(temperatures)) if temperatures.size else None,
         })
     return summaries
+
+
+def summarize_windows(windows):
+    """Run the healthy-pump checks on (x, y, z, temperature) windows; return
+    one compact result per running (not idle) window."""
+    return [summary for summary in _window_summaries(windows) if summary is not None]
 
 
 def axis_status(rms, limit):
@@ -385,10 +392,53 @@ def assess(window_results):
 # device_id -> (last_update, view): the analysis only reruns when new data arrived.
 _live_cache = {}
 
+# device_id -> the running windows of its live buffer, each judged once when
+# it is complete (not all ~48 again on every update, which a small server
+# could not keep up with): {"buffer_id", "total", "pending", "windows"}.
+_live_windows = {}
+_live_windows_lock = Lock()
 
-def _compute_live_view(raw):
-    windows, _ = running_windows(raw)
-    results = summarize_windows(windows)
+
+def live_window_results(device_id, buffer_id, raw, total):
+    """Results of the running windows in the device's live buffer (raw: its
+    last LIVE_RAW_SAMPLES samples; total: samples received so far). Only the
+    windows completed since the last call are judged."""
+    with _live_windows_lock:
+        state = _live_windows.get(device_id)
+        new_count = total - state["total"] if state and state["buffer_id"] == buffer_id else -1
+        if not 0 <= new_count <= len(raw):
+            # First call, a new buffer or missed samples: start from the buffer.
+            state = {"buffer_id": buffer_id, "total": total - len(raw), "pending": [], "windows": []}
+            _live_windows[device_id] = state
+            new_count = len(raw)
+
+        index = state["total"]  # stream position of the next new sample
+        pending = state["pending"]
+        completed = []  # (position of the window's first sample, rows)
+        for sample in raw[len(raw) - new_count:]:
+            row = sample_row(sample) if sample_is_running(sample) else None
+            if row is None:
+                pending = []  # the pump stopped: don't join samples across the gap
+            else:
+                pending.append(row)
+                if len(pending) == config.WINDOW_SIZE:
+                    completed.append((index - config.WINDOW_SIZE + 1, pending))
+                    pending = []
+            index += 1
+        if completed:
+            summaries = _window_summaries([rows for _, rows in completed])
+            state["windows"].extend(
+                (start, summary) for (start, _), summary in zip(completed, summaries)
+            )
+        state["pending"], state["total"] = pending, total
+        # Keep the windows that are still in the live buffer (the last ~60 s).
+        oldest = total - len(raw)
+        state["windows"] = [(start, s) for start, s in state["windows"] if start >= oldest]
+        return [summary for _, summary in state["windows"] if summary is not None]
+
+
+def _compute_live_view(device_id, buffer_id, raw, total):
+    results = live_window_results(device_id, buffer_id, raw, total)
     latest = raw[-1] if raw else {}
     running_now = bool(raw) and sample_is_running(latest)
     # Bars: the live ADXL345 data of the last few seconds, pump running or not
@@ -410,6 +460,8 @@ def live_view(device_id):
             return None
         info = esp32_data_buffer[device_id]
         raw = list(info.get("live_raw", []))
+        total = info.get("live_total", len(raw))
+        buffer_id = info.get("buffer_id")
         device = {
             "device_id": device_id,
             "device_name": info.get("device_name") or device_id,
@@ -420,7 +472,7 @@ def live_view(device_id):
     if cached and cached[0] == device["last_update"]:
         view = cached[1]
     else:
-        view = _compute_live_view(raw)
+        view = _compute_live_view(device_id, buffer_id, raw, total)
         _live_cache[device_id] = (device["last_update"], view)
     return {**device, **view}
 
