@@ -15,7 +15,7 @@
 //  - Render (cloud, default): works on any Wi-Fi with internet, e.g. the phone's
 //    hotspot, and the phone app reads the same server.
 //  - A backend on the laptop: "http://<laptop IP>:5000" (laptop on the same Wi-Fi).
-const char *SERVER_BASE_URL = "https://pump-monitor-backend.onrender.com";
+const char *SERVER_BASE_URL = "https://capstone-1-z9k0.onrender.com";
 
 // USB link: send every request over the USB cable instead of Wi-Fi. Use it when
 // the ESP32 is plugged into the laptop; python/scripts/serial_bridge.py reads

@@ -14,7 +14,7 @@ import 'live_data.dart';
 //   --dart-define=SERVER_BASE_URL=http://localhost:5000
 const String serverBaseUrl = String.fromEnvironment(
   'SERVER_BASE_URL',
-  defaultValue: 'https://pump-monitor-backend.onrender.com',
+  defaultValue: 'https://capstone-1-z9k0.onrender.com',
 );
 const Duration apiTimeout = Duration(seconds: 10);
 

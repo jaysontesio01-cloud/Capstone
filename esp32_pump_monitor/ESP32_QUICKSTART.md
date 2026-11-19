@@ -51,7 +51,7 @@ Search and install:
 The sketch uses WiFiManager, so you do not need to edit Wi-Fi credentials in
 the code. The server URL is already configured as:
 ```cpp
-const char* SERVER_BASE_URL = "https://pump-monitor-backend.onrender.com";
+const char* SERVER_BASE_URL = "https://capstone-1-z9k0.onrender.com";
 ```
 
 After uploading, the ESP32 first tries its saved network. If no network is
@@ -82,7 +82,7 @@ Keep Wi-Fi credentials private and do not commit them to a public repository.
 
 The Serial Monitor (115200 baud) shows how the link is doing:
 ```
-[Net] server name pump-monitor-backend.onrender.com: resolves to 216.24.57.18 (45 ms) | internet: OK (111 ms)
+[Net] server name capstone-1-z9k0.onrender.com: resolves to 216.24.57.18 (45 ms) | internet: OK (111 ms)
 [WiFi] connected to "<hotspot>", IP 10.168.100.202, signal -50 dBm | sent 7720, queued 270, dropped 0 | last HTTP 200 in 2601 ms
 ```
 - `internet: NOT working`: the hotspot has no mobile data.
