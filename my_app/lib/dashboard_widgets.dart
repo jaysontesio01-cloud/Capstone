@@ -401,18 +401,24 @@ TextPainter _text(String text, TextStyle style) => TextPainter(
   textDirection: TextDirection.ltr,
 )..layout();
 
-/// The 0-5 g scale left of the bars (the top 22 px hold the % labels).
+/// The scale left of the bars, one label per grid line from the bottom up
+/// (the top 22 px hold the value labels): 0-5 g for vibration.
 class _ScalePainter extends CustomPainter {
-  const _ScalePainter();
+  const _ScalePainter({
+    this.labels = const ['0 g', '1 g', '2 g', '3 g', '4 g', '5 g'],
+  });
+
+  final List<String> labels;
 
   @override
   void paint(Canvas canvas, Size size) {
     const top = 22.0;
     final height = size.height - top;
-    for (var g = 0; g <= kBarMaxG; g++) {
-      final y = top + height - height * g / kBarMaxG;
+    final steps = labels.length - 1;
+    for (var i = 0; i <= steps; i++) {
+      final y = top + height - height * i / steps;
       final label = _text(
-        '$g g',
+        labels[i],
         const TextStyle(
           color: kMuted,
           fontSize: 10,
@@ -427,7 +433,8 @@ class _ScalePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ScalePainter oldDelegate) =>
+      oldDelegate.labels != labels;
 }
 
 class _BarPainter extends CustomPainter {
@@ -874,9 +881,7 @@ class TestTimerCard extends StatelessWidget {
                     style: OutlinedButton.styleFrom(foregroundColor: kFaulty),
                   )
                 : FilledButton.icon(
-                    onPressed: busy || !canStart || !connected
-                        ? null
-                        : onStart,
+                    onPressed: busy || !canStart || !connected ? null : onStart,
                     icon: const Icon(Icons.play_arrow),
                     label: Text(test.exists ? 'New test' : 'Start test'),
                   ),
@@ -1154,16 +1159,19 @@ class _StackedInfo extends StatelessWidget {
   }
 }
 
-/// One vertical bar: Healthy at the bottom, Faulty at the top. It fills from
-/// the bottom by how far the pump is from healthy (100% - health), coloured
-/// green at the bottom to red at the top; the marker shows the level.
+/// Machine health as one bar drawn like the vibration bars (same height,
+/// scale, grid lines, rounded bar and value above the fill). Healthy at the
+/// bottom, Faulty at the top: it fills from the bottom by how far the pump is
+/// from healthy (100% - health), green at the bottom to red at the top, so
+/// the top of the fill sits at the health value on the scale.
 class VerticalHealthBar extends StatelessWidget {
   const VerticalHealthBar({super.key, required this.healthPercent});
 
   final double? healthPercent;
 
-  static const double barHeight = 170;
-  static const double barWidth = 34;
+  static const double scaleWidth = 40; // room for "100%"
+  static const double columnWidth =
+      96; // bar = half of it, as the vibration bars
 
   @override
   Widget build(BuildContext context) {
@@ -1178,16 +1186,30 @@ class VerticalHealthBar extends StatelessWidget {
             color: kFaulty,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         SizedBox(
-          width: barWidth,
-          height: barHeight,
-          child: CustomPaint(
-            painter: _HealthBarPainter(
-              level: healthPercent == null
-                  ? null
-                  : (1 - healthPercent! / 100).clamp(0.0, 1.0),
-            ),
+          width: scaleWidth + columnWidth,
+          height: kBarHeight + 22,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(
+                width: scaleWidth,
+                height: kBarHeight + 22,
+                child: CustomPaint(
+                  painter: _ScalePainter(
+                    labels: ['100%', '80%', '60%', '40%', '20%', '0%'],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: columnWidth,
+                height: kBarHeight + 22,
+                child: CustomPaint(
+                  painter: _HealthBarPainter(healthPercent: healthPercent),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 4),
@@ -1204,55 +1226,106 @@ class VerticalHealthBar extends StatelessWidget {
   }
 }
 
-class _HealthBarPainter extends CustomPainter {
-  _HealthBarPainter({required this.level});
+const _healthColors = [kHealthy, kMonitor, kWarning, kFaulty];
+const _healthStops = [0.0, 0.35, 0.65, 1.0];
 
-  /// 0 = healthy (bottom) ... 1 = faulty (top); null = no data.
-  final double? level;
+/// The health bar's colour at [t] (0 = bottom, healthy ... 1 = top, faulty).
+Color _healthColorAt(double t) {
+  for (var i = 1; i < _healthStops.length; i++) {
+    if (t <= _healthStops[i]) {
+      final span = _healthStops[i] - _healthStops[i - 1];
+      return Color.lerp(
+        _healthColors[i - 1],
+        _healthColors[i],
+        (t - _healthStops[i - 1]) / span,
+      )!;
+    }
+  }
+  return _healthColors.last;
+}
+
+class _HealthBarPainter extends CustomPainter {
+  _HealthBarPainter({required this.healthPercent});
+
+  /// 0-100; null = no data.
+  final double? healthPercent;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bar = Offset.zero & size;
-    final radius = Radius.circular(size.width / 2);
+    // Same layout as _BarPainter: 22 px for the value label, bar half as wide
+    // as its column, grid lines every fifth (20%) matching the scale.
+    const top = 22.0;
+    final height = size.height - top;
+    final barWidth = (size.width * 0.5).clamp(18.0, 64.0);
+    final left = (size.width - barWidth) / 2;
+    final barRect = Rect.fromLTWH(left, top, barWidth, height);
+
+    final grid = Paint()
+      ..color = const Color(0xFFE2E8F0)
+      ..strokeWidth = 1;
+    for (var i = 0; i <= 5; i++) {
+      final y = top + height - height * i / 5;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
     canvas.drawRRect(
-      RRect.fromRectAndRadius(bar, radius),
-      Paint()..color = kTrack,
+      RRect.fromRectAndRadius(barRect, const Radius.circular(6)),
+      Paint()..color = kTrack.withAlpha(200),
     );
 
-    final value = level;
-    if (value == null) return;
+    final health = healthPercent;
+    if (health == null) {
+      final label = _text(
+        'no data',
+        const TextStyle(color: kOff, fontSize: 12, fontWeight: FontWeight.w700),
+      );
+      label.paint(
+        canvas,
+        Offset(
+          (size.width - label.width) / 2,
+          top + (height - label.height) / 2,
+        ),
+      );
+      return;
+    }
 
-    // Fill from the bottom; the gradient spans the whole bar, so a higher
-    // fill reaches the warning and faulty colours.
-    final fillTop = size.height * (1 - value);
-    final fill = Rect.fromLTRB(0, fillTop, size.width, size.height);
-    canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(bar, radius));
-    canvas.drawRect(
-      fill,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-          colors: [kHealthy, kMonitor, kWarning, kFaulty],
-          stops: [0.0, 0.35, 0.65, 1.0],
-        ).createShader(bar),
-    );
-    canvas.restore();
+    // Fill from the bottom by 100% - health; the gradient spans the whole
+    // bar, so a higher fill reaches the warning and faulty colours.
+    final level = (1 - health / 100).clamp(0.0, 1.0);
+    final fillHeight = (height * level).clamp(level > 0 ? 3.0 : 0.0, height);
+    if (fillHeight > 0) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, top + height - fillHeight, barWidth, fillHeight),
+          const Radius.circular(6),
+        ),
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: _healthColors,
+            stops: _healthStops,
+          ).createShader(barRect),
+      );
+    }
 
-    // Marker at the level (visible even when the pump is fully healthy).
-    final y = fillTop.clamp(1.5, size.height - 1.5);
-    canvas.drawLine(
-      Offset(-4, y),
-      Offset(size.width + 4, y),
-      Paint()
-        ..color = kInk
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round,
+    // The health value above the fill, in the bar's colour at that level.
+    final label = _text(
+      '${health.toStringAsFixed(0)}%',
+      TextStyle(
+        color: _healthColorAt(level),
+        fontSize: 13,
+        fontWeight: FontWeight.w900,
+      ),
     );
+    final labelY = (top + height - fillHeight - label.height - 2).clamp(
+      0.0,
+      size.height - label.height,
+    );
+    label.paint(canvas, Offset((size.width - label.width) / 2, labelY));
   }
 
   @override
   bool shouldRepaint(covariant _HealthBarPainter oldDelegate) =>
-      oldDelegate.level != level;
+      oldDelegate.healthPercent != healthPercent;
 }

@@ -269,8 +269,8 @@ learned from it and the anomaly model trained on it). Poll every 2 seconds.
              "check": "Listen for grinding or rumbling at the motor, ..."}
         ]
     },
-    "healthy_reference": {"total_rms_g": 0.7544, "axis_rms_g": {"x": 0.3341, "y": 0.077, "z": 0.6654},
-                          "axis_limit_g": {"x": 0.4974, "y": 0.1562, "z": 1.0246},
+    "healthy_reference": {"total_rms_g": 0.8524, "axis_rms_g": {"x": 0.5, "y": 0.15, "z": 0.6654},
+                          "axis_limit_g": {"x": 0.7444, "y": 0.3043, "z": 1.0246},
                           "temperature_mean_c": 55.37, "temperature_max_c": 65.25},
     "test": {"state": "running", "minutes": 20, "remaining_seconds": 754.0, "assessment": {"...": "as above"}},
     "recording": {"recording": true, "file": "data\\recordings\\ESP32-001_app_test_20min_....csv"}

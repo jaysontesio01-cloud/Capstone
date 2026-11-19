@@ -255,13 +255,14 @@ class PumpTest {
 /// The healthy pump's per-axis values (data/healthy_reference/
 /// ESP32-002_healthy_reference.json, limits from models/pump_part_thresholds.json),
 /// built in so the bars show the healthy levels even before the server answers.
+/// X and Y were set by hand to 0.50 g and 0.15 g (limits moved with them).
 const List<AxisLevel> kDefaultAxes = [
   AxisLevel(
     axis: 'X',
     pumpPart: 'Lateral Bearing/Shaft Alignment',
     rmsG: null,
-    healthyRmsG: 0.3341,
-    healthyLimitG: 0.4974,
+    healthyRmsG: 0.50,
+    healthyLimitG: 0.7444,
     timesHealthy: null,
     status: 'off',
   ),
@@ -269,8 +270,8 @@ const List<AxisLevel> kDefaultAxes = [
     axis: 'Y',
     pumpPart: 'Radial Bearing/Motor Housing',
     rmsG: null,
-    healthyRmsG: 0.077,
-    healthyLimitG: 0.1562,
+    healthyRmsG: 0.15,
+    healthyLimitG: 0.3043,
     timesHealthy: null,
     status: 'off',
   ),
@@ -287,9 +288,9 @@ const List<AxisLevel> kDefaultAxes = [
 
 const kDefaultHealthyReference = HealthyReference(
   available: true,
-  totalRmsG: 0.7544,
-  axisRmsG: {'x': 0.3341, 'y': 0.077, 'z': 0.6654},
-  axisLimitG: {'x': 0.4974, 'y': 0.1562, 'z': 1.0246},
+  totalRmsG: 0.8524,
+  axisRmsG: {'x': 0.50, 'y': 0.15, 'z': 0.6654},
+  axisLimitG: {'x': 0.7444, 'y': 0.3043, 'z': 1.0246},
   temperatureMeanC: 55.37,
   temperatureMaxC: 65.25,
   recordedFrom: null,

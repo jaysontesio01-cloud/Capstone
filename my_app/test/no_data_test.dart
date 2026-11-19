@@ -37,8 +37,8 @@ void expectAllSections() {
   }
   expect(find.text('Predictive maintenance'), findsNothing); // removed
   // The healthy pump's values are built in.
-  expect(find.textContaining('Healthy 0.33 g'), findsOneWidget);
-  expect(find.textContaining('Healthy 0.08 g'), findsOneWidget);
+  expect(find.textContaining('Healthy 0.50 g'), findsOneWidget);
+  expect(find.textContaining('Healthy 0.15 g'), findsOneWidget);
   expect(find.textContaining('Healthy 0.67 g'), findsOneWidget);
   expect(find.text('— °C'), findsOneWidget); // temperature circle
   expect(find.text('Healthy: 55.4 °C · max 65.3 °C'), findsOneWidget);
